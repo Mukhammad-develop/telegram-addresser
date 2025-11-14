@@ -1,10 +1,25 @@
 # 🚀 Telegram Multi-Channel Forwarder Bot
 
-A robust, production-ready 24/7 automated forwarding system that copies messages from multiple Telegram channels to corresponding target channels with text replacement, filtering, and comprehensive error handling.
+A robust, production-ready 24/7 automated message copying system that copies messages from multiple Telegram channels to corresponding target channels with text replacement, filtering, and comprehensive error handling.
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Code style](https://img.shields.io/badge/code%20style-organized-brightgreen.svg)](https://github.com/Mukhammad-develop/telegram-addresser)
+
+## 🎯 Quick Start
+
+```bash
+# 1. Clone and setup
+git clone https://github.com/Mukhammad-develop/telegram-addresser.git
+cd telegram-addresser
+./start.sh
+
+# 2. Set up Telegram admin bot (recommended)
+python admin_bot.py
+# Message your bot on Telegram!
+```
+
+📖 **Read First:** [docs/README_FIRST.txt](docs/README_FIRST.txt)
 
 ## ✨ Features
 
@@ -24,7 +39,7 @@ A robust, production-ready 24/7 automated forwarding system that copies messages
 ### 🔍 Filtering
 - ✅ **Whitelist mode** - Forward only messages containing specific keywords
 - ✅ **Blacklist mode** - Forward all except messages with specific keywords
-- ✅ **Easy configuration** - Manage filters via web admin panel
+- ✅ **Easy configuration** - Manage filters via admin interfaces
 
 ### 🛡️ Reliability
 - ✅ **Auto-retry logic** - Exponential backoff on failures
@@ -33,7 +48,8 @@ A robust, production-ready 24/7 automated forwarding system that copies messages
 - ✅ **Comprehensive logging** - Rotating logs with detailed diagnostics
 
 ### 🎛️ Management
-- ✅ **Web admin panel** - Beautiful, easy-to-use configuration interface
+- ✅ **Telegram bot admin** - 🆕 Manage from Telegram (recommended!)
+- ✅ **Web admin panel** - Beautiful browser-based interface
 - ✅ **No code editing needed** - All settings manageable via UI or JSON
 - ✅ **24/7 daemon mode** - Runs as a background service
 - ✅ **Backfill support** - Forward recent messages on startup
@@ -144,6 +160,12 @@ Then open http://127.0.0.1:5000 in your browser to:
 
 Comprehensive documentation is available in the `docs/` directory:
 
+### 📝 Getting Started
+- **[README_FIRST.txt](docs/README_FIRST.txt)** - 👈 **START HERE!**
+- **[TELEGRAM_BOT_GUIDE.txt](docs/TELEGRAM_BOT_GUIDE.txt)** - Quick Telegram bot setup
+- **[STRUCTURE.txt](docs/STRUCTURE.txt)** - Project file layout
+
+### 📖 Complete Guides
 - **[START_HERE.md](docs/START_HERE.md)** - Quick orientation and FAQ
 - **[QUICK_START.md](docs/QUICK_START.md)** - 5-minute setup guide
 - **[TELEGRAM_ADMIN_BOT.md](docs/TELEGRAM_ADMIN_BOT.md)** - 🆕 Telegram bot admin guide
@@ -158,15 +180,17 @@ Comprehensive documentation is available in the `docs/` directory:
 ```
 telegram-addresser/
 ├── bot.py                    # Main bot application
+├── admin_bot.py              # 🆕 Telegram admin bot
 ├── admin_panel.py            # Web admin interface
 ├── config.example.json       # Configuration template
 ├── requirements.txt          # Python dependencies
 ├── start.sh                  # Quick start script
+├── run_admin_bot.sh          # Admin bot start script
 ├── src/                      # Source code modules
 │   ├── config_manager.py     # Configuration management
 │   ├── text_processor.py     # Text replacement & filtering
 │   └── logger_setup.py       # Logging system
-├── docs/                     # Documentation (7 guides)
+├── docs/                     # Documentation (10 guides)
 ├── systemd/                  # System service files
 └── logs/                     # Application logs
 ```
@@ -263,6 +287,7 @@ This project is provided as-is for automation purposes. Ensure compliance with T
 - [x] Text replacement rules
 - [x] Message filtering
 - [x] Media support (all types)
+- [x] Telegram bot admin panel 🆕
 - [x] Web admin panel
 - [x] Error handling & retry logic
 - [x] Flood-wait handling
@@ -286,3 +311,4 @@ This project is provided as-is for automation purposes. Ensure compliance with T
 
 ⭐ **Star this repo if you find it useful!**
 
+📖 **Start here:** [docs/README_FIRST.txt](docs/README_FIRST.txt)
