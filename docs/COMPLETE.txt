@@ -8,7 +8,7 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ✅ 6 Python files (bot.py, admin_bot.py, admin_panel.py + 3 modules)
-✅ 11 Documentation files (3,643 lines total!)
+✅ 8 Documentation files (clean & focused!)
 ✅ 2 Start scripts (start.sh, run_admin_bot.sh)
 ✅ 1 Systemd service file
 ✅ Everything on GitHub
@@ -33,21 +33,17 @@ src/ (3 modules):
   • text_processor.py         - Text replacement
   • logger_setup.py           - Logging system
 
-docs/ (11 files - ALL documentation here!):
-  📝 Quick Guides:
-    • README_FIRST.txt         - START HERE
-    • TELEGRAM_BOT_GUIDE.txt   - Telegram bot quick setup
-    • STRUCTURE.txt            - Visual project layout
+docs/ (8 files - Clean & organized!):
+  📝 Essential Guides:
+    • START_HERE.md            - 👈 START HERE - Orientation & FAQ
+    • QUICK_START.md           - 5-minute setup
+    • TELEGRAM_ADMIN_BOT.md    - Telegram bot admin guide
     • COMPLETE.txt             - This file!
   
-  📖 Complete Documentation:
-    • START_HERE.md            - Orientation & FAQ
-    • QUICK_START.md           - 5-minute setup
-    • TELEGRAM_ADMIN_BOT.md    - Full Telegram bot guide
+  📖 Advanced Guides:
     • README.md                - Complete user manual
-    • DEPLOYMENT.md            - VPS deployment
+    • DEPLOYMENT.md            - VPS deployment guide
     • TROUBLESHOOTING.md       - Problem solving
-    • PROJECT_OVERVIEW.md      - Technical details
     • PROJECT_STRUCTURE.md     - File organization
 
 systemd/:
@@ -81,8 +77,8 @@ logs/:
   ✅ JSON configuration
 
 📚 Documentation:
-  ✅ 11 comprehensive guides
-  ✅ 3,643 lines of documentation
+  ✅ 8 focused guides (no duplicates!)
+  ✅ Clean, organized structure
   ✅ Quick start guides
   ✅ Complete manuals
   ✅ Troubleshooting
@@ -114,13 +110,13 @@ Option 3: Edit config.json directly
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 For first-time setup:
-  1. Read: docs/README_FIRST.txt
+  1. Read: docs/START_HERE.md
   2. Configure: config.json
   3. Run: ./start.sh
   4. Done!
 
 For Telegram admin bot:
-  1. Read: docs/TELEGRAM_BOT_GUIDE.txt
+  1. Read: docs/TELEGRAM_ADMIN_BOT.md
   2. Set up bot with @BotFather
   3. Run: ./run_admin_bot.sh
   4. Message /start to your bot
@@ -132,11 +128,10 @@ For Telegram admin bot:
 Where to start based on your needs:
 
 🟢 I'm new, just want to get started:
-   → docs/README_FIRST.txt
+   → docs/START_HERE.md
    → docs/QUICK_START.md
 
 🔵 I want Telegram bot admin:
-   → docs/TELEGRAM_BOT_GUIDE.txt
    → docs/TELEGRAM_ADMIN_BOT.md
 
 🟡 I want to learn everything:
@@ -150,7 +145,6 @@ Where to start based on your needs:
    → docs/TROUBLESHOOTING.md
 
 ⚫ I'm a developer:
-   → docs/PROJECT_OVERVIEW.md
    → docs/PROJECT_STRUCTURE.md
 
 🌐 GITHUB REPOSITORY

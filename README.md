@@ -19,7 +19,7 @@ python admin_bot.py
 # Message your bot on Telegram!
 ```
 
-📖 **Read First:** [docs/README_FIRST.txt](docs/README_FIRST.txt)
+📖 **Read First:** [docs/START_HERE.md](docs/START_HERE.md)
 
 ## ✨ Features
 
@@ -160,19 +160,16 @@ Then open http://127.0.0.1:5000 in your browser to:
 
 Comprehensive documentation is available in the `docs/` directory:
 
-### 📝 Getting Started
-- **[README_FIRST.txt](docs/README_FIRST.txt)** - 👈 **START HERE!**
-- **[TELEGRAM_BOT_GUIDE.txt](docs/TELEGRAM_BOT_GUIDE.txt)** - Quick Telegram bot setup
-- **[STRUCTURE.txt](docs/STRUCTURE.txt)** - Project file layout
-
-### 📖 Complete Guides
-- **[START_HERE.md](docs/START_HERE.md)** - Quick orientation and FAQ
+### Essential Guides
+- **[START_HERE.md](docs/START_HERE.md)** - 👈 **START HERE** - Quick orientation
 - **[QUICK_START.md](docs/QUICK_START.md)** - 5-minute setup guide
-- **[TELEGRAM_ADMIN_BOT.md](docs/TELEGRAM_ADMIN_BOT.md)** - 🆕 Telegram bot admin guide
+- **[TELEGRAM_ADMIN_BOT.md](docs/TELEGRAM_ADMIN_BOT.md)** - Telegram bot admin guide
+- **[COMPLETE.txt](docs/COMPLETE.txt)** - Quick project summary
+
+### Advanced Guides
 - **[README.md](docs/README.md)** - Complete user manual
 - **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - VPS deployment guide
 - **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Problem solving
-- **[PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md)** - Technical details
 - **[PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)** - File organization
 
 ## 📁 Project Structure
