@@ -1,0 +1,23 @@
+[Unit]
+Description=Telegram Multi-Channel Forwarder Bot
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/path/to/telegram-addresser
+Environment="PATH=/path/to/telegram-addresser/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/path/to/telegram-addresser/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/telegram-forwarder/output.log
+StandardError=append:/var/log/telegram-forwarder/error.log
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+

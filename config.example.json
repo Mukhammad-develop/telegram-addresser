@@ -1,0 +1,45 @@
+{
+  "api_credentials": {
+    "api_id": 0,
+    "api_hash": "YOUR_API_HASH_HERE",
+    "session_name": "forwarder_session"
+  },
+  "channel_pairs": [
+    {
+      "source": -1001234567890,
+      "target": -1009876543210,
+      "enabled": true,
+      "backfill_count": 10
+    }
+  ],
+  "replacement_rules": [
+    {
+      "find": "Elite",
+      "replace": "Excellent",
+      "case_sensitive": false
+    },
+    {
+      "find": "United",
+      "replace": "Skúška",
+      "case_sensitive": false
+    },
+    {
+      "find": "https://wa.me/1234567890",
+      "replace": "https://wa.me/YOUR_NUMBER",
+      "case_sensitive": true
+    }
+  ],
+  "filters": {
+    "enabled": false,
+    "mode": "whitelist",
+    "keywords": ["GOLD", "SIGNAL", "BUY", "SELL"]
+  },
+  "settings": {
+    "retry_attempts": 5,
+    "retry_delay": 5,
+    "flood_wait_extra_delay": 10,
+    "max_message_length": 4096,
+    "log_level": "INFO"
+  }
+}
+
