@@ -102,7 +102,33 @@ python bot.py
 
 ## 🎛️ Admin Panel
 
-Start the web interface for easy configuration:
+### Option 1: Telegram Bot (Recommended) 🤖
+
+Manage everything directly from Telegram! No web browser needed.
+
+```bash
+python admin_bot.py
+```
+
+**Setup:**
+1. Message [@BotFather](https://t.me/BotFather) on Telegram
+2. Create a new bot and get your token
+3. Get your user ID from [@userinfobot](https://t.me/userinfobot)
+4. Add to `config.json`:
+   ```json
+   {
+     "admin_bot_token": "YOUR_BOT_TOKEN",
+     "admin_user_ids": [YOUR_USER_ID]
+   }
+   ```
+5. Run `python admin_bot.py`
+6. Message your bot on Telegram and send `/start`
+
+📖 **Full guide:** [docs/TELEGRAM_ADMIN_BOT.md](docs/TELEGRAM_ADMIN_BOT.md)
+
+### Option 2: Web Interface 🌐
+
+Start the web interface:
 
 ```bash
 python admin_panel.py
@@ -120,6 +146,7 @@ Comprehensive documentation is available in the `docs/` directory:
 
 - **[START_HERE.md](docs/START_HERE.md)** - Quick orientation and FAQ
 - **[QUICK_START.md](docs/QUICK_START.md)** - 5-minute setup guide
+- **[TELEGRAM_ADMIN_BOT.md](docs/TELEGRAM_ADMIN_BOT.md)** - 🆕 Telegram bot admin guide
 - **[README.md](docs/README.md)** - Complete user manual
 - **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - VPS deployment guide
 - **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Problem solving
