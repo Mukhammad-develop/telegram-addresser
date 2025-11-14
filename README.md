@@ -9,9 +9,9 @@ A robust, production-ready 24/7 automated forwarding system that copies messages
 ## ✨ Features
 
 ### 🔄 Core Functionality
-- ✅ **Real-time forwarding** - Near-zero delay message forwarding
-- ✅ **Multi-channel support** - Forward from 10+ source channels simultaneously
-- ✅ **Preserves "Forwarded from"** - Maintains original message metadata
+- ✅ **Real-time message copying** - Near-zero delay message copying
+- ✅ **Multi-channel support** - Copy from 10+ source channels simultaneously
+- ✅ **No "Forwarded from" tag** - Messages appear as original content
 - ✅ **Media group support** - Handles albums, photos+captions correctly
 - ✅ **All content types** - Text, photos, videos, documents, voice messages
 
@@ -196,10 +196,18 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed instructions.
 
 ## 📊 Performance
 
-- **Latency**: < 1 second for message forwarding
+- **Latency**: < 1 second for message copying
 - **Throughput**: Handles 100+ messages/minute
 - **Memory**: ~50-100MB RAM usage
 - **Reliability**: 99.9%+ uptime with auto-restart
+
+## 📝 Important Note
+
+**Messages are copied WITHOUT the "Forwarded from" tag.** This means:
+- Messages appear as if they were originally posted in the target channel
+- Text replacement rules are applied to the content
+- Media is re-uploaded to the target channel
+- No attribution to the source channel
 
 ## 🔒 Security
 

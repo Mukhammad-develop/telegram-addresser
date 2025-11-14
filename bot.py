@@ -93,7 +93,7 @@ class TelegramForwarder:
     
     async def handle_new_message(self, event) -> None:
         """
-        Handle incoming new messages and forward them.
+        Handle incoming new messages and copy them (without "Forwarded from" tag).
         
         Args:
             event: Telethon NewMessage event
@@ -133,10 +133,10 @@ class TelegramForwarder:
         is_backfill: bool = False
     ) -> bool:
         """
-        Forward a message with retry logic and error handling.
+        Copy and send a message without "Forwarded from" metadata.
         
         Args:
-            message: Message to forward
+            message: Message to copy
             source: Source channel ID
             target: Target channel ID
             is_backfill: Whether this is a backfill operation
@@ -149,11 +149,25 @@ class TelegramForwarder:
         
         while attempt < self.retry_attempts:
             try:
-                # Forward the message (preserves "Forwarded from" metadata)
-                await self.client.forward_messages(target, message)
+                # Get message text/caption and apply replacements
+                text = message.text or message.message or ""
+                if text:
+                    text = self.text_processor.process_text(text)
+                
+                # Copy message without "Forwarded from" tag
+                if message.media:
+                    # Send media with processed caption
+                    await self.client.send_message(
+                        target,
+                        text if text else None,
+                        file=message.media
+                    )
+                else:
+                    # Send text-only message
+                    await self.client.send_message(target, text)
                 
                 self.logger.info(
-                    f"{prefix} -> Forwarded message {message.id} "
+                    f"{prefix} -> Copied message {message.id} "
                     f"from {source} to {target}"
                 )
                 return True
@@ -194,7 +208,7 @@ class TelegramForwarder:
                 
             except Exception as e:
                 self.logger.error(
-                    f"Error forwarding message {message.id} "
+                    f"Error copying message {message.id} "
                     f"from {source} to {target}: {type(e).__name__}: {e}"
                 )
                 
@@ -207,7 +221,7 @@ class TelegramForwarder:
                     return False
         
         self.logger.error(
-            f"Failed to forward message {message.id} after {self.retry_attempts} attempts"
+            f"Failed to copy message {message.id} after {self.retry_attempts} attempts"
         )
         return False
     
@@ -218,7 +232,7 @@ class TelegramForwarder:
         count: int
     ) -> None:
         """
-        Backfill recent messages from source to target.
+        Backfill recent messages from source to target (copies without "Forwarded from").
         
         Args:
             source: Source channel ID
@@ -236,7 +250,7 @@ class TelegramForwarder:
             # Get recent messages
             messages = await self.client.get_messages(source, limit=count)
             
-            # Forward in chronological order (oldest first)
+            # Copy in chronological order (oldest first)
             for message in reversed(messages):
                 # Check filters
                 text = message.text or message.message or ""
@@ -246,7 +260,7 @@ class TelegramForwarder:
                     self.logger.debug(f"Backfill message {message.id} filtered out")
                     continue
                 
-                # Forward with retry
+                # Copy with retry
                 await self.forward_message_with_retry(message, source, target, is_backfill=True)
                 
                 # Small delay to avoid rate limits
