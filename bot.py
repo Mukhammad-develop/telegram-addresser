@@ -334,8 +334,26 @@ class TelegramForwarder:
                             if m.grouped_id == message.grouped_id
                         ]
                         
+                        # Sort by ID to get correct order
+                        sorted_group = sorted(group_messages, key=lambda x: x.id)
+                        
+                        # Extract caption from the FIRST message in group (not the triggering one)
+                        group_text = ""
+                        if sorted_group:
+                            first_msg = sorted_group[0]
+                            group_text = first_msg.text or first_msg.message or ""
+                            if group_text:
+                                group_text = self.text_processor.process_text(group_text)
+                            
+                            # Add source link if enabled
+                            if self.add_source_link:
+                                channel_id = str(source).replace("-100", "")
+                                message_link = f"https://t.me/c/{channel_id}/{first_msg.id}"
+                                link_text = self.source_link_text.format(link=message_link)
+                                group_text = (group_text or "") + link_text
+                        
                         # Download all media in the group
-                        for msg in sorted(group_messages, key=lambda x: x.id):
+                        for msg in sorted_group:
                             if msg.media:
                                 # Download to temp directory
                                 file_path = await self.client.download_media(
@@ -345,12 +363,12 @@ class TelegramForwarder:
                                 if file_path:
                                     media_files.append(file_path)
                         
-                        # Send all media together with caption on first one
+                        # Send all media together with caption from first message
                         if media_files:
                             sent_msg = await self.client.send_file(
                                 target,
                                 media_files,
-                                caption=text if text else None,
+                                caption=group_text if group_text else None,
                                 reply_to=reply_to
                             )
                             
