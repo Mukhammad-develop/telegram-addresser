@@ -440,8 +440,21 @@ class TelegramForwarder:
             # Get recent messages
             messages = await self.client.get_messages(source_entity, limit=count)
             
+            # Track processed groups during backfill
+            backfill_processed_groups = set()
+            
             # Copy in chronological order (oldest first)
             for message in reversed(messages):
+                # Skip if this message is part of an already-processed media group
+                if message.grouped_id:
+                    if message.grouped_id in backfill_processed_groups:
+                        self.logger.debug(
+                            f"Backfill: Skipping message {message.id} - already processed as part of group {message.grouped_id}"
+                        )
+                        continue
+                    # Mark this group as processed
+                    backfill_processed_groups.add(message.grouped_id)
+                
                 # Check filters
                 text = message.text or message.message or ""
                 filters = self.config_manager.get_filters()
