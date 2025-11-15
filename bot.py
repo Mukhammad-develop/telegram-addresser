@@ -381,7 +381,8 @@ class TelegramForwarder:
                                 target,
                                 media_files,
                                 caption=group_text if group_text else None,
-                                reply_to=reply_to
+                                reply_to=reply_to,
+                                parse_mode='Markdown'
                             )
                             
                             # Store message ID mapping for reply chains
@@ -440,7 +441,8 @@ class TelegramForwarder:
                                 target,
                                 file_path,
                                 caption=text if text else None,
-                                reply_to=reply_to
+                                reply_to=reply_to,
+                                parse_mode='Markdown'
                             )
                             
                             # Store message ID mapping for reply chains
@@ -468,7 +470,8 @@ class TelegramForwarder:
                             target,
                             text if text else None,
                             file=message.media,
-                            reply_to=reply_to
+                            reply_to=reply_to,
+                            parse_mode='Markdown'
                         )
                     finally:
                         # Ensure cleanup even if send fails
@@ -482,7 +485,8 @@ class TelegramForwarder:
                     sent_msg = await self.client.send_message(
                         target, 
                         text,
-                        reply_to=reply_to
+                        reply_to=reply_to,
+                        parse_mode='Markdown'
                     )
                     
                     # Store message ID mapping for reply chains
