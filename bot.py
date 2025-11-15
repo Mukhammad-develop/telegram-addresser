@@ -8,7 +8,8 @@ from telethon.errors import (
     MessageIdInvalidError, 
     ChannelPrivateError,
     ChatWriteForbiddenError,
-    SlowModeWaitError
+    SlowModeWaitError,
+    ChatForwardsRestrictedError
 )
 from telethon.tl.types import Message
 
@@ -203,6 +204,13 @@ class TelegramForwarder:
             except ChatWriteForbiddenError:
                 self.logger.error(
                     f"Cannot write to channel {target} - insufficient permissions"
+                )
+                return False
+                
+            except ChatForwardsRestrictedError:
+                self.logger.error(
+                    f"Cannot copy messages from {source} - channel has forwarding restrictions enabled. "
+                    f"The admin must disable 'Restrict saving content' in channel settings."
                 )
                 return False
                 
