@@ -36,6 +36,25 @@ logs/
 *.log
 forward_log.txt
 
+# Downloaded media files (temporary)
+temp_media/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.mp4
+*.avi
+*.mkv
+*.webm
+*.webp
+*.tgs
+*.mp3
+*.ogg
+*.wav
+*.pdf
+*.doc
+*.docx
+
 # Configuration (contains sensitive data)
 config.json
 config.json.backup
