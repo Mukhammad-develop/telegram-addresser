@@ -377,12 +377,17 @@ class TelegramForwarder:
                         
                         # Send all media together with caption from first message
                         if media_files:
+                            # Get formatting entities from the caption message if available
+                            formatting_entities = None
+                            if caption_msg and hasattr(caption_msg, 'entities'):
+                                formatting_entities = caption_msg.entities
+                            
                             sent_msg = await self.client.send_file(
                                 target,
                                 media_files,
                                 caption=group_text if group_text else None,
                                 reply_to=reply_to,
-                                parse_mode='Markdown'
+                                formatting_entities=formatting_entities
                             )
                             
                             # Store message ID mapping for reply chains
@@ -437,12 +442,15 @@ class TelegramForwarder:
                         
                         if file_path:
                             # Re-upload with processed caption
+                            # Preserve original formatting entities
+                            formatting_entities = message.entities if hasattr(message, 'entities') else None
+                            
                             sent_msg = await self.client.send_file(
                                 target,
                                 file_path,
                                 caption=text if text else None,
                                 reply_to=reply_to,
-                                parse_mode='Markdown'
+                                formatting_entities=formatting_entities
                             )
                             
                             # Store message ID mapping for reply chains
@@ -466,12 +474,15 @@ class TelegramForwarder:
                     except Exception as download_error:
                         # If download fails, try direct send
                         self.logger.warning(f"Download failed, trying direct send: {download_error}")
+                        # Preserve original formatting entities
+                        formatting_entities = message.entities if hasattr(message, 'entities') else None
+                        
                         await self.client.send_message(
                             target,
                             text if text else None,
                             file=message.media,
                             reply_to=reply_to,
-                            parse_mode='Markdown'
+                            formatting_entities=formatting_entities
                         )
                     finally:
                         # Ensure cleanup even if send fails
@@ -482,11 +493,14 @@ class TelegramForwarder:
                                 pass
                 else:
                     # Send text-only message
+                    # Preserve original formatting entities
+                    formatting_entities = message.entities if hasattr(message, 'entities') else None
+                    
                     sent_msg = await self.client.send_message(
                         target, 
                         text,
                         reply_to=reply_to,
-                        parse_mode='Markdown'
+                        formatting_entities=formatting_entities
                     )
                     
                     # Store message ID mapping for reply chains
