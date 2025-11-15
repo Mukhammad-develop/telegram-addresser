@@ -155,14 +155,26 @@ class TelegramForwarder:
                 if text:
                     text = self.text_processor.process_text(text)
                 
-                # Copy message without "Forwarded from" tag
+                # Handle message with media (bypass content protection by downloading first)
                 if message.media:
-                    # Send media with processed caption
-                    await self.client.send_message(
-                        target,
-                        text if text else None,
-                        file=message.media
-                    )
+                    try:
+                        # Download media to memory
+                        media_file = await self.client.download_media(message, file=bytes)
+                        
+                        # Re-upload as new message with processed caption
+                        await self.client.send_file(
+                            target,
+                            media_file,
+                            caption=text if text else None
+                        )
+                    except Exception as download_error:
+                        # If download fails, try direct send (might work for some media)
+                        self.logger.warning(f"Download failed, trying direct send: {download_error}")
+                        await self.client.send_message(
+                            target,
+                            text if text else None,
+                            file=message.media
+                        )
                 else:
                     # Send text-only message
                     await self.client.send_message(target, text)
