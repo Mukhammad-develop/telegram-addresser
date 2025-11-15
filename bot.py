@@ -1,6 +1,9 @@
 """Main Telegram forwarder bot with multi-channel support."""
 import asyncio
+import os
+import shutil
 import time
+from pathlib import Path
 from typing import Dict, List, Optional, Set
 from telethon import TelegramClient, events
 from telethon.errors import (
@@ -451,6 +454,15 @@ class TelegramForwarder:
     async def stop(self) -> None:
         """Stop the bot gracefully."""
         self.logger.info("Stopping bot...")
+        
+        # Clean up temp media directory
+        if self.temp_media_dir.exists():
+            try:
+                shutil.rmtree(self.temp_media_dir)
+                self.logger.info("Cleaned up temp media directory")
+            except Exception as e:
+                self.logger.warning(f"Failed to clean up temp directory: {e}")
+        
         await self.client.disconnect()
         self.logger.info("Bot stopped")
 
