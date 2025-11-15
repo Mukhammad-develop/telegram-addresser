@@ -228,6 +228,15 @@ class TelegramForwarder:
                     # This message was forwarded from somewhere, so forward it to target
                     # Try to forward from the ORIGINAL source to preserve "Forwarded from" metadata
                     try:
+                        # Debug: Log forward object attributes
+                        self.logger.debug(f"Forward object attributes: {dir(message.forward)}")
+                        self.logger.debug(
+                            f"Forward details - from_id: {getattr(message.forward, 'from_id', None)}, "
+                            f"from_name: {getattr(message.forward, 'from_name', None)}, "
+                            f"channel_post: {getattr(message.forward, 'channel_post', None)}, "
+                            f"post_author: {getattr(message.forward, 'post_author', None)}"
+                        )
+                        
                         # Check if we have the original channel and message ID
                         original_channel = None
                         original_msg_id = None
