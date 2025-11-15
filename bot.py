@@ -57,6 +57,9 @@ class TelegramForwarder:
         # Track forwarded messages to avoid duplicates
         self.forwarded_messages: Set[int] = set()
         
+        # Track processed media groups to avoid duplicates
+        self.processed_groups: Set[int] = set()
+        
         # Get settings
         self.retry_attempts = settings.get("retry_attempts", 5)
         self.retry_delay = settings.get("retry_delay", 5)
