@@ -262,9 +262,9 @@ class TelegramForwarder:
                         # Try to forward from original channel (best option - preserves "Forwarded from")
                         if original_channel and original_msg_id:
                             try:
-                                self.logger.debug(
-                                    f"Attempting to forward from original channel {original_channel}, "
-                                    f"message {original_msg_id}"
+                                self.logger.info(
+                                    f"🔄 Attempting to forward from ORIGINAL channel {original_channel}, "
+                                    f"message {original_msg_id} to target {target}"
                                 )
                                 sent_msg = await self.client.forward_messages(
                                     target, 
@@ -272,28 +272,31 @@ class TelegramForwarder:
                                     original_channel
                                 )
                                 self.logger.info(
-                                    f"{prefix} -> Forwarded message {message.id} from ORIGINAL channel "
+                                    f"✅ {prefix} -> Successfully forwarded from ORIGINAL channel "
                                     f"{original_channel} (msg {original_msg_id}) to {target}"
                                 )
                             except Exception as original_forward_error:
-                                self.logger.debug(
-                                    f"Could not forward from original channel: {original_forward_error}, "
-                                    f"trying from source channel"
+                                self.logger.warning(
+                                    f"❌ Could not forward from ORIGINAL channel {original_channel}: "
+                                    f"{type(original_forward_error).__name__}: {original_forward_error}"
                                 )
+                                self.logger.info(f"🔄 Trying fallback: forwarding from source channel...")
                                 # Fall through to try forwarding from source channel
                         
                         # If forwarding from original failed, try from source channel
                         if not sent_msg:
                             try:
+                                self.logger.info(f"🔄 Trying to forward from SOURCE channel {source}...")
                                 sent_msg = await self.client.forward_messages(target, message)
                                 self.logger.info(
-                                    f"{prefix} -> Forwarded message {message.id} from source {source} to {target}"
+                                    f"✅ {prefix} -> Forwarded message {message.id} from SOURCE {source} to {target}"
                                 )
                             except Exception as source_forward_error:
                                 self.logger.warning(
-                                    f"Could not forward from source channel: {source_forward_error}, "
-                                    f"will copy instead"
+                                    f"❌ Could not forward from SOURCE channel either: "
+                                    f"{type(source_forward_error).__name__}: {source_forward_error}"
                                 )
+                                self.logger.info(f"📋 Final fallback: Will copy message content instead")
                                 # Fall through to copying method
                         
                         # Store message ID mapping for reply chains
