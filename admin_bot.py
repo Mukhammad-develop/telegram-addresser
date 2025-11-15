@@ -300,56 +300,113 @@ def show_rules(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "add_rule")
 def add_rule_start(call):
-    """Start adding replacement rule."""
+    """Start adding replacement rule - step 1: ask for find text."""
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="menu_rules"))
     
     bot.edit_message_text(
-        "🔄 <b>Add Replacement Rule</b>\n\n"
-        "Send in this format:\n"
-        "<code>find_text | replace_text | case_sensitive</code>\n\n"
-        "Example:\n"
-        "<code>Elite | Premium | no</code>\n"
-        "<code>https://old.com | https://new.com | yes</code>\n\n"
-        "case_sensitive can be: yes/no, true/false, 1/0\n\n"
-        "💡 Tip: Send /start to cancel",
+        "🔄 <b>Add Replacement Rule - Step 1/3</b>\n\n"
+        "What text should I <b>find</b> in messages?\n\n"
+        "Example: <code>Elite</code> or <code>https://old.com</code>\n\n"
+        "Send the text you want to find:",
         call.message.chat.id,
         call.message.message_id,
         parse_mode='HTML',
         reply_markup=markup
     )
-    bot.register_next_step_handler(call.message, process_add_rule)
+    bot.register_next_step_handler(call.message, process_add_rule_step1)
 
 
-def process_add_rule(message):
-    """Process rule addition."""
+def process_add_rule_step1(message):
+    """Process step 1: got find text, ask for replace text."""
     try:
-        parts = message.text.split('|')
-        if len(parts) < 2:
-            bot.reply_to(message, "❌ Invalid format. Use: find | replace | case_sensitive")
+        if message.text.startswith('/'):
+            # User sent a command, don't process
             return
         
-        find = parts[0].strip()
-        replace = parts[1].strip()
-        case_sensitive = False
+        find_text = message.text.strip()
+        if not find_text:
+            bot.reply_to(message, "❌ Text cannot be empty. Try again.", reply_markup=main_menu_keyboard())
+            return
         
-        if len(parts) > 2:
-            case_str = parts[2].strip().lower()
-            case_sensitive = case_str in ['yes', 'true', '1', 'y']
+        # Store in a temporary way - using message
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="menu_rules"))
         
-        config_manager.add_replacement_rule(find, replace, case_sensitive)
+        msg = bot.send_message(
+            message.chat.id,
+            f"🔄 <b>Add Replacement Rule - Step 2/3</b>\n\n"
+            f"Find: <code>{find_text}</code>\n\n"
+            f"What text should I <b>replace</b> it with?\n\n"
+            f"Example: <code>Premium</code> or <code>https://new.com</code>\n\n"
+            f"Send the replacement text:",
+            parse_mode='HTML',
+            reply_markup=markup
+        )
         
-        bot.reply_to(
-            message,
-            f"✅ <b>Replacement rule added!</b>\n\n"
-            f"Find: <code>{find}</code>\n"
-            f"Replace: <code>{replace}</code>\n"
-            f"Case-sensitive: {case_sensitive}",
+        # Pass find_text to next step
+        bot.register_next_step_handler(msg, process_add_rule_step2, find_text)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)}", reply_markup=main_menu_keyboard())
+
+
+def process_add_rule_step2(message, find_text):
+    """Process step 2: got replace text, ask for case sensitivity."""
+    try:
+        if message.text.startswith('/'):
+            return
+        
+        replace_text = message.text.strip()
+        if not replace_text:
+            bot.reply_to(message, "❌ Text cannot be empty. Try again.", reply_markup=main_menu_keyboard())
+            return
+        
+        # Ask for case sensitivity with buttons
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("✅ Yes", callback_data=f"rule_case_yes|{find_text}|{replace_text}"),
+            types.InlineKeyboardButton("❌ No", callback_data=f"rule_case_no|{find_text}|{replace_text}")
+        )
+        markup.add(types.InlineKeyboardButton("🔙 Cancel", callback_data="menu_rules"))
+        
+        bot.send_message(
+            message.chat.id,
+            f"🔄 <b>Add Replacement Rule - Step 3/3</b>\n\n"
+            f"Find: <code>{find_text}</code>\n"
+            f"Replace: <code>{replace_text}</code>\n\n"
+            f"Should matching be <b>case-sensitive</b>?\n\n"
+            f"• <b>Yes</b> = 'Elite' matches only 'Elite'\n"
+            f"• <b>No</b> = 'Elite' matches 'elite', 'ELITE', etc.",
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)}", reply_markup=main_menu_keyboard())
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("rule_case_"))
+def finish_add_rule(call):
+    """Finish adding rule with case sensitivity choice."""
+    try:
+        parts = call.data.split('|')
+        case_sensitive = parts[0] == "rule_case_yes"
+        find_text = parts[1]
+        replace_text = parts[2]
+        
+        config_manager.add_replacement_rule(find_text, replace_text, case_sensitive)
+        
+        bot.edit_message_text(
+            f"✅ <b>Replacement rule added successfully!</b>\n\n"
+            f"Find: <code>{find_text}</code>\n"
+            f"Replace: <code>{replace_text}</code>\n"
+            f"Case-sensitive: {'Yes' if case_sensitive else 'No'}",
+            call.message.chat.id,
+            call.message.message_id,
             parse_mode='HTML',
             reply_markup=main_menu_keyboard()
         )
     except Exception as e:
-        bot.reply_to(message, f"❌ Error: {str(e)}")
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}")
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "remove_rule")
