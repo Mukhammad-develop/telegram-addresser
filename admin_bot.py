@@ -33,6 +33,9 @@ if not ADMIN_BOT_TOKEN or ADMIN_BOT_TOKEN == "PUT_YOUR_BOT_TOKEN_HERE":
 # Initialize bot
 bot = telebot.TeleBot(ADMIN_BOT_TOKEN)
 
+# Temporary storage for multi-step operations (chat_id -> data)
+temp_storage = {}
+
 if not ADMIN_USER_IDS:
     print("\n⚠️  WARNING: No admin users configured!")
     print("Please add your Telegram user ID to config.json:")
@@ -64,6 +67,10 @@ def send_welcome(message):
     """Send welcome message with main menu."""
     # Clear any pending step handlers first (cancel ongoing operations)
     bot.clear_step_handler_by_chat_id(message.chat.id)
+    
+    # Clear any temporary storage for this user
+    if message.chat.id in temp_storage:
+        temp_storage.pop(message.chat.id)
     
     if not is_admin(message.from_user.id):
         bot.reply_to(message, "❌ You are not authorized to use this bot.")
@@ -268,6 +275,10 @@ def process_toggle_channel_pair(message):
 @bot.callback_query_handler(func=lambda call: call.data == "menu_rules")
 def show_rules(call):
     """Show replacement rules."""
+    # Clear any temporary storage when navigating to menu
+    if call.message.chat.id in temp_storage:
+        temp_storage.pop(call.message.chat.id)
+    
     config_manager.load()
     rules = config_manager.get_replacement_rules()
     
@@ -361,11 +372,17 @@ def process_add_rule_step2(message, find_text):
             bot.reply_to(message, "❌ Text cannot be empty. Try again.", reply_markup=main_menu_keyboard())
             return
         
-        # Ask for case sensitivity with buttons
+        # Store data temporarily for this chat
+        temp_storage[message.chat.id] = {
+            'find_text': find_text,
+            'replace_text': replace_text
+        }
+        
+        # Ask for case sensitivity with buttons (simple callback data now)
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("✅ Yes", callback_data=f"rule_case_yes|{find_text}|{replace_text}"),
-            types.InlineKeyboardButton("❌ No", callback_data=f"rule_case_no|{find_text}|{replace_text}")
+            types.InlineKeyboardButton("✅ Yes", callback_data="rule_case_yes"),
+            types.InlineKeyboardButton("❌ No", callback_data="rule_case_no")
         )
         markup.add(types.InlineKeyboardButton("🔙 Cancel", callback_data="menu_rules"))
         
@@ -388,10 +405,16 @@ def process_add_rule_step2(message, find_text):
 def finish_add_rule(call):
     """Finish adding rule with case sensitivity choice."""
     try:
-        parts = call.data.split('|')
-        case_sensitive = parts[0] == "rule_case_yes"
-        find_text = parts[1]
-        replace_text = parts[2]
+        # Get stored data for this chat
+        chat_id = call.message.chat.id
+        if chat_id not in temp_storage:
+            bot.answer_callback_query(call.id, "❌ Session expired. Please start again.")
+            return
+        
+        data = temp_storage.pop(chat_id)  # Get and remove from storage
+        find_text = data['find_text']
+        replace_text = data['replace_text']
+        case_sensitive = call.data == "rule_case_yes"
         
         config_manager.add_replacement_rule(find_text, replace_text, case_sensitive)
         
@@ -405,8 +428,12 @@ def finish_add_rule(call):
             parse_mode='HTML',
             reply_markup=main_menu_keyboard()
         )
+        bot.answer_callback_query(call.id, "✅ Rule added!")
     except Exception as e:
         bot.answer_callback_query(call.id, f"❌ Error: {str(e)}")
+        # Clean up storage on error
+        if call.message.chat.id in temp_storage:
+            temp_storage.pop(call.message.chat.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "remove_rule")
