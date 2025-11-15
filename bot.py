@@ -289,47 +289,47 @@ class TelegramForwarder:
                 
                 # Handle single media message
                 if message.media:
-                        file_path = None
-                        try:
-                            # Download media to temp directory
-                            file_path = await self.client.download_media(
-                                message,
-                                file=self.temp_media_dir
-                            )
-                            
-                            if file_path:
-                                # Re-upload with processed caption
-                                await self.client.send_file(
-                                    target,
-                                    file_path,
-                                    caption=text if text else None,
-                                    reply_to=reply_to
-                                )
-                                
-                                # Clean up downloaded file
-                                try:
-                                    os.remove(file_path)
-                                except Exception as e:
-                                    self.logger.warning(f"Failed to delete {file_path}: {e}")
-                            else:
-                                raise Exception("Download returned None")
+                    file_path = None
+                    try:
+                        # Download media to temp directory
+                        file_path = await self.client.download_media(
+                            message,
+                            file=self.temp_media_dir
+                        )
                         
-                        except Exception as download_error:
-                            # If download fails, try direct send
-                            self.logger.warning(f"Download failed, trying direct send: {download_error}")
-                            await self.client.send_message(
+                        if file_path:
+                            # Re-upload with processed caption
+                            await self.client.send_file(
                                 target,
-                                text if text else None,
-                                file=message.media,
+                                file_path,
+                                caption=text if text else None,
                                 reply_to=reply_to
                             )
-                        finally:
-                            # Ensure cleanup even if send fails
-                            if file_path and os.path.exists(file_path):
-                                try:
-                                    os.remove(file_path)
-                                except:
-                                    pass
+                            
+                            # Clean up downloaded file
+                            try:
+                                os.remove(file_path)
+                            except Exception as e:
+                                self.logger.warning(f"Failed to delete {file_path}: {e}")
+                        else:
+                            raise Exception("Download returned None")
+                    
+                    except Exception as download_error:
+                        # If download fails, try direct send
+                        self.logger.warning(f"Download failed, trying direct send: {download_error}")
+                        await self.client.send_message(
+                            target,
+                            text if text else None,
+                            file=message.media,
+                            reply_to=reply_to
+                        )
+                    finally:
+                        # Ensure cleanup even if send fails
+                        if file_path and os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                            except:
+                                pass
                 else:
                     # Send text-only message
                     await self.client.send_message(
