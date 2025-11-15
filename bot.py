@@ -60,6 +60,10 @@ class TelegramForwarder:
         # Track processed media groups to avoid duplicates
         self.processed_groups: Set[int] = set()
         
+        # Map source message IDs to target message IDs for reply preservation
+        # Key: f"{source_channel_id}:{source_msg_id}" -> Value: target_msg_id
+        self.message_id_map: Dict[str, int] = {}
+        
         # Get settings
         self.retry_attempts = settings.get("retry_attempts", 5)
         self.retry_delay = settings.get("retry_delay", 5)
@@ -210,13 +214,32 @@ class TelegramForwarder:
                 # Get reply_to_msg_id if this is a reply
                 reply_to = None
                 if message.reply_to and message.reply_to.reply_to_msg_id:
-                    reply_to = message.reply_to.reply_to_msg_id
+                    # Map the source reply ID to target reply ID
+                    source_reply_id = message.reply_to.reply_to_msg_id
+                    map_key = f"{source}:{source_reply_id}"
+                    reply_to = self.message_id_map.get(map_key)
+                    if not reply_to:
+                        self.logger.debug(
+                            f"Reply target message {source_reply_id} not found in map, reply chain will break"
+                        )
                 
                 # Check if message is forwarded from another channel
                 if message.forward:
                     # This message was forwarded from somewhere, so forward it to target
                     try:
-                        await self.client.forward_messages(target, message)
+                        sent_msg = await self.client.forward_messages(target, message)
+                        
+                        # Store message ID mapping for reply chains
+                        if sent_msg:
+                            map_key = f"{source}:{message.id}"
+                            self.message_id_map[map_key] = sent_msg.id
+                            # Clean up old mappings (keep last 1000)
+                            if len(self.message_id_map) > 1000:
+                                # Remove oldest 200 entries
+                                keys_to_remove = list(self.message_id_map.keys())[:200]
+                                for key in keys_to_remove:
+                                    del self.message_id_map[key]
+                        
                         self.logger.info(
                             f"{prefix} -> Forwarded message {message.id} (originally from {message.forward.from_id}) "
                             f"from {source} to {target}"
@@ -258,12 +281,30 @@ class TelegramForwarder:
                         
                         # Send all media together with caption on first one
                         if media_files:
-                            await self.client.send_file(
+                            sent_msg = await self.client.send_file(
                                 target,
                                 media_files,
                                 caption=text if text else None,
                                 reply_to=reply_to
                             )
+                            
+                            # Store message ID mapping for reply chains
+                            if sent_msg:
+                                # For media groups, sent_msg might be a list
+                                if isinstance(sent_msg, list):
+                                    # Map the first message in group (which has the caption)
+                                    map_key = f"{source}:{message.id}"
+                                    self.message_id_map[map_key] = sent_msg[0].id
+                                else:
+                                    map_key = f"{source}:{message.id}"
+                                    self.message_id_map[map_key] = sent_msg.id
+                                
+                                # Clean up old mappings (keep last 1000)
+                                if len(self.message_id_map) > 1000:
+                                    keys_to_remove = list(self.message_id_map.keys())[:200]
+                                    for key in keys_to_remove:
+                                        del self.message_id_map[key]
+                            
                             self.logger.info(
                                 f"{prefix} -> Sent media group with {len(media_files)} items "
                                 f"from {source} to {target}"
@@ -299,12 +340,22 @@ class TelegramForwarder:
                         
                         if file_path:
                             # Re-upload with processed caption
-                            await self.client.send_file(
+                            sent_msg = await self.client.send_file(
                                 target,
                                 file_path,
                                 caption=text if text else None,
                                 reply_to=reply_to
                             )
+                            
+                            # Store message ID mapping for reply chains
+                            if sent_msg:
+                                map_key = f"{source}:{message.id}"
+                                self.message_id_map[map_key] = sent_msg.id
+                                # Clean up old mappings (keep last 1000)
+                                if len(self.message_id_map) > 1000:
+                                    keys_to_remove = list(self.message_id_map.keys())[:200]
+                                    for key in keys_to_remove:
+                                        del self.message_id_map[key]
                             
                             # Clean up downloaded file
                             try:
@@ -332,11 +383,21 @@ class TelegramForwarder:
                                 pass
                 else:
                     # Send text-only message
-                    await self.client.send_message(
+                    sent_msg = await self.client.send_message(
                         target, 
                         text,
                         reply_to=reply_to
                     )
+                    
+                    # Store message ID mapping for reply chains
+                    if sent_msg:
+                        map_key = f"{source}:{message.id}"
+                        self.message_id_map[map_key] = sent_msg.id
+                        # Clean up old mappings (keep last 1000)
+                        if len(self.message_id_map) > 1000:
+                            keys_to_remove = list(self.message_id_map.keys())[:200]
+                            for key in keys_to_remove:
+                                del self.message_id_map[key]
                 
                 self.logger.info(
                     f"{prefix} -> Copied message {message.id} "
