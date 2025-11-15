@@ -62,6 +62,9 @@ def main_menu_keyboard():
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     """Send welcome message with main menu."""
+    # Clear any pending step handlers first (cancel ongoing operations)
+    bot.clear_step_handler_by_chat_id(message.chat.id)
+    
     if not is_admin(message.from_user.id):
         bot.reply_to(message, "❌ You are not authorized to use this bot.")
         return
@@ -72,7 +75,7 @@ def send_welcome(message):
 Welcome! Use the buttons below to manage your forwarder bot.
 
 <b>Available Commands:</b>
-/start - Show this menu
+/start - Show this menu (also cancels ongoing operations)
 /status - Check bot status
 /help - Get help
     """
@@ -138,16 +141,21 @@ def show_channels(call):
 @bot.callback_query_handler(func=lambda call: call.data == "add_channel_pair")
 def add_channel_pair_start(call):
     """Start adding channel pair."""
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="menu_channels"))
+    
     bot.edit_message_text(
         "📡 <b>Add Channel Pair</b>\n\n"
         "Please send channel IDs in this format:\n"
         "<code>source_id target_id backfill_count</code>\n\n"
         "Example:\n"
         "<code>-1001234567890 -1009876543210 10</code>\n\n"
-        "To get channel IDs, forward a message from the channel to @userinfobot",
+        "To get channel IDs, forward a message from the channel to @userinfobot\n\n"
+        "💡 Tip: Send /start to cancel",
         call.message.chat.id,
         call.message.message_id,
-        parse_mode='HTML'
+        parse_mode='HTML',
+        reply_markup=markup
     )
     bot.register_next_step_handler(call.message, process_add_channel_pair)
 
@@ -293,6 +301,9 @@ def show_rules(call):
 @bot.callback_query_handler(func=lambda call: call.data == "add_rule")
 def add_rule_start(call):
     """Start adding replacement rule."""
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="menu_rules"))
+    
     bot.edit_message_text(
         "🔄 <b>Add Replacement Rule</b>\n\n"
         "Send in this format:\n"
@@ -300,10 +311,12 @@ def add_rule_start(call):
         "Example:\n"
         "<code>Elite | Premium | no</code>\n"
         "<code>https://old.com | https://new.com | yes</code>\n\n"
-        "case_sensitive can be: yes/no, true/false, 1/0",
+        "case_sensitive can be: yes/no, true/false, 1/0\n\n"
+        "💡 Tip: Send /start to cancel",
         call.message.chat.id,
         call.message.message_id,
-        parse_mode='HTML'
+        parse_mode='HTML',
+        reply_markup=markup
     )
     bot.register_next_step_handler(call.message, process_add_rule)
 

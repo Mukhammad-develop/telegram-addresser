@@ -57,6 +57,7 @@ temp_media/
 
 # Configuration (contains sensitive data)
 config.json
+config_1.json
 config.json.backup
 
 # IDE
