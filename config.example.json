@@ -41,7 +41,9 @@
     "retry_delay": 5,
     "flood_wait_extra_delay": 10,
     "max_message_length": 4096,
-    "log_level": "INFO"
+    "log_level": "INFO",
+    "add_source_link": true,
+    "source_link_text": "\n\n🔗 Source: {link}"
   }
 }
 

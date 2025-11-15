@@ -59,6 +59,8 @@ class TelegramForwarder:
         self.retry_delay = settings.get("retry_delay", 5)
         self.flood_wait_extra = settings.get("flood_wait_extra_delay", 10)
         self.max_message_length = settings.get("max_message_length", 4096)
+        self.add_source_link = settings.get("add_source_link", False)
+        self.source_link_text = settings.get("source_link_text", "\n\n🔗 Source: {link}")
         
         self.logger.info("TelegramForwarder initialized")
     
@@ -170,6 +172,14 @@ class TelegramForwarder:
                 text = message.text or message.message or ""
                 if text:
                     text = self.text_processor.process_text(text)
+                
+                # Add source link if enabled (for testing/verification)
+                if self.add_source_link:
+                    # Convert channel ID to link format (remove -100 prefix)
+                    channel_id = str(source).replace("-100", "")
+                    message_link = f"https://t.me/c/{channel_id}/{message.id}"
+                    link_text = self.source_link_text.format(link=message_link)
+                    text = (text or "") + link_text
                 
                 # Get reply_to_msg_id if this is a reply
                 reply_to = None
