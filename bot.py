@@ -226,8 +226,58 @@ class TelegramForwarder:
                 # Check if message is forwarded from another channel
                 if message.forward:
                     # This message was forwarded from somewhere, so forward it to target
+                    # Try to forward from the ORIGINAL source to preserve "Forwarded from" metadata
                     try:
-                        sent_msg = await self.client.forward_messages(target, message)
+                        # Check if we have the original channel and message ID
+                        original_channel = None
+                        original_msg_id = None
+                        
+                        # Get original channel from forward info
+                        if hasattr(message.forward, 'from_id'):
+                            original_channel = message.forward.from_id
+                        
+                        # Get original message ID from forward info
+                        if hasattr(message.forward, 'channel_post'):
+                            original_msg_id = message.forward.channel_post
+                        
+                        sent_msg = None
+                        
+                        # Try to forward from original channel (best option - preserves "Forwarded from")
+                        if original_channel and original_msg_id:
+                            try:
+                                self.logger.debug(
+                                    f"Attempting to forward from original channel {original_channel}, "
+                                    f"message {original_msg_id}"
+                                )
+                                sent_msg = await self.client.forward_messages(
+                                    target, 
+                                    original_msg_id, 
+                                    original_channel
+                                )
+                                self.logger.info(
+                                    f"{prefix} -> Forwarded message {message.id} from ORIGINAL channel "
+                                    f"{original_channel} (msg {original_msg_id}) to {target}"
+                                )
+                            except Exception as original_forward_error:
+                                self.logger.debug(
+                                    f"Could not forward from original channel: {original_forward_error}, "
+                                    f"trying from source channel"
+                                )
+                                # Fall through to try forwarding from source channel
+                        
+                        # If forwarding from original failed, try from source channel
+                        if not sent_msg:
+                            try:
+                                sent_msg = await self.client.forward_messages(target, message)
+                                self.logger.info(
+                                    f"{prefix} -> Forwarded message {message.id} from source {source} to {target}"
+                                )
+                            except Exception as source_forward_error:
+                                self.logger.warning(
+                                    f"Could not forward from source channel: {source_forward_error}, "
+                                    f"will copy instead"
+                                )
+                                # Fall through to copying method
                         
                         # Store message ID mapping for reply chains
                         if sent_msg:
@@ -239,14 +289,10 @@ class TelegramForwarder:
                                 keys_to_remove = list(self.message_id_map.keys())[:200]
                                 for key in keys_to_remove:
                                     del self.message_id_map[key]
+                            return True
                         
-                        self.logger.info(
-                            f"{prefix} -> Forwarded message {message.id} (originally from {message.forward.from_id}) "
-                            f"from {source} to {target}"
-                        )
-                        return True
                     except Exception as forward_error:
-                        self.logger.warning(f"Could not forward, will copy instead: {forward_error}")
+                        self.logger.warning(f"Forward handling failed: {forward_error}, will copy instead")
                         # Fall through to copying method
                 
                 # Handle media groups (albums with multiple photos/videos)
