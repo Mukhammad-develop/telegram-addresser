@@ -226,69 +226,69 @@ class TelegramForwarder:
                         self.logger.warning(f"Could not forward, will copy instead: {forward_error}")
                         # Fall through to copying method
                 
-                    # Handle media groups (albums with multiple photos/videos)
-                    if message.grouped_id:
-                        # This is part of a media group/album
-                        # Get all messages in this group
-                        media_files = []
-                        try:
-                            messages_in_group = await self.client.get_messages(
-                                source,
-                                limit=10,
-                                min_id=message.id - 10,
-                                max_id=message.id + 10
+                # Handle media groups (albums with multiple photos/videos)
+                if message.grouped_id:
+                    # This is part of a media group/album
+                    # Get all messages in this group
+                    media_files = []
+                    try:
+                        messages_in_group = await self.client.get_messages(
+                            source,
+                            limit=10,
+                            min_id=message.id - 10,
+                            max_id=message.id + 10
+                        )
+                        
+                        # Filter messages with same grouped_id
+                        group_messages = [
+                            m for m in messages_in_group
+                            if m.grouped_id == message.grouped_id
+                        ]
+                        
+                        # Download all media in the group
+                        for msg in sorted(group_messages, key=lambda x: x.id):
+                            if msg.media:
+                                # Download to temp directory
+                                file_path = await self.client.download_media(
+                                    msg,
+                                    file=self.temp_media_dir
+                                )
+                                if file_path:
+                                    media_files.append(file_path)
+                        
+                        # Send all media together with caption on first one
+                        if media_files:
+                            await self.client.send_file(
+                                target,
+                                media_files,
+                                caption=text if text else None,
+                                reply_to=reply_to
+                            )
+                            self.logger.info(
+                                f"{prefix} -> Sent media group with {len(media_files)} items "
+                                f"from {source} to {target}"
                             )
                             
-                            # Filter messages with same grouped_id
-                            group_messages = [
-                                m for m in messages_in_group
-                                if m.grouped_id == message.grouped_id
-                            ]
-                            
-                            # Download all media in the group
-                            for msg in sorted(group_messages, key=lambda x: x.id):
-                                if msg.media:
-                                    # Download to temp directory
-                                    file_path = await self.client.download_media(
-                                        msg,
-                                        file=self.temp_media_dir
-                                    )
-                                    if file_path:
-                                        media_files.append(file_path)
-                            
-                            # Send all media together with caption on first one
-                            if media_files:
-                                await self.client.send_file(
-                                    target,
-                                    media_files,
-                                    caption=text if text else None,
-                                    reply_to=reply_to
-                                )
-                                self.logger.info(
-                                    f"{prefix} -> Sent media group with {len(media_files)} items "
-                                    f"from {source} to {target}"
-                                )
-                                
-                                # Clean up downloaded files
-                                for file_path in media_files:
-                                    try:
-                                        os.remove(file_path)
-                                    except Exception as e:
-                                        self.logger.warning(f"Failed to delete {file_path}: {e}")
-                                
-                                return True
-                        except Exception as group_error:
-                            self.logger.warning(f"Media group handling failed: {group_error}, trying single message")
-                            # Clean up any downloaded files
+                            # Clean up downloaded files
                             for file_path in media_files:
                                 try:
                                     os.remove(file_path)
-                                except:
-                                    pass
-                            # Fall through to single message handling
+                                except Exception as e:
+                                    self.logger.warning(f"Failed to delete {file_path}: {e}")
+                            
+                            return True
+                    except Exception as group_error:
+                        self.logger.warning(f"Media group handling failed: {group_error}, trying single message")
+                        # Clean up any downloaded files
+                        for file_path in media_files:
+                            try:
+                                os.remove(file_path)
+                            except:
+                                pass
+                        # Fall through to single message handling
                 
-                    # Handle single media message
-                    if message.media:
+                # Handle single media message
+                if message.media:
                         file_path = None
                         try:
                             # Download media to temp directory
