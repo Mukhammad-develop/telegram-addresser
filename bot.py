@@ -76,6 +76,22 @@ class TelegramForwarder:
         else:
             self.logger.info(f"Monitoring {len(source_channels)} source channel(s)")
         
+        # Verify access to all channels before starting
+        for pair in channel_pairs:
+            try:
+                source_entity = await self.client.get_entity(pair["source"])
+                target_entity = await self.client.get_entity(pair["target"])
+                self.logger.info(
+                    f"✓ Access verified: {getattr(source_entity, 'title', 'Channel')} → "
+                    f"{getattr(target_entity, 'title', 'Channel')}"
+                )
+            except ValueError as e:
+                self.logger.error(
+                    f"✗ Cannot access channels {pair['source']} → {pair['target']}. "
+                    f"Make sure your account is a member of both channels. Error: {e}"
+                )
+                continue
+        
         # Register event handler for new messages
         @self.client.on(events.NewMessage(chats=source_channels))
         async def handler(event):
@@ -267,8 +283,19 @@ class TelegramForwarder:
                 f"Backfilling last {count} messages from {source} to {target}"
             )
             
+            # Get channel entities first (important for Telethon)
+            try:
+                source_entity = await self.client.get_entity(source)
+                target_entity = await self.client.get_entity(target)
+            except ValueError as e:
+                self.logger.error(
+                    f"Cannot access channel - make sure your account is a member of both channels. "
+                    f"Source: {source}, Target: {target}. Error: {e}"
+                )
+                return
+            
             # Get recent messages
-            messages = await self.client.get_messages(source, limit=count)
+            messages = await self.client.get_messages(source_entity, limit=count)
             
             # Copy in chronological order (oldest first)
             for message in reversed(messages):
