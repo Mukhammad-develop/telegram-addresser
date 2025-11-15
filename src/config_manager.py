@@ -11,7 +11,7 @@ class ConfigManager:
     def __init__(self, config_path: str = "config.json"):
         self.config_path = config_path
         self.config: Dict[str, Any] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # Use RLock instead of Lock for reentrant locking
         self.load()
     
     def load(self) -> Dict[str, Any]:
