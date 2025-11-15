@@ -228,13 +228,16 @@ class TelegramForwarder:
                     # This message was forwarded from somewhere, so forward it to target
                     # Try to forward from the ORIGINAL source to preserve "Forwarded from" metadata
                     try:
-                        # Debug: Log forward object attributes
-                        self.logger.debug(f"Forward object attributes: {dir(message.forward)}")
-                        self.logger.debug(
-                            f"Forward details - from_id: {getattr(message.forward, 'from_id', None)}, "
-                            f"from_name: {getattr(message.forward, 'from_name', None)}, "
-                            f"channel_post: {getattr(message.forward, 'channel_post', None)}, "
-                            f"post_author: {getattr(message.forward, 'post_author', None)}"
+                        # Debug: Log forward object attributes (using INFO to ensure visibility)
+                        self.logger.info(f"🔍 DEBUG - Forward object type: {type(message.forward)}")
+                        self.logger.info(f"🔍 DEBUG - Forward attributes: {[attr for attr in dir(message.forward) if not attr.startswith('_')]}")
+                        self.logger.info(
+                            f"🔍 DEBUG - from_id: {getattr(message.forward, 'from_id', 'NOT FOUND')}, "
+                            f"from_name: {getattr(message.forward, 'from_name', 'NOT FOUND')}, "
+                            f"channel_post: {getattr(message.forward, 'channel_post', 'NOT FOUND')}, "
+                            f"chat_id: {getattr(message.forward, 'chat_id', 'NOT FOUND')}, "
+                            f"saved_from_peer: {getattr(message.forward, 'saved_from_peer', 'NOT FOUND')}, "
+                            f"saved_from_msg_id: {getattr(message.forward, 'saved_from_msg_id', 'NOT FOUND')}"
                         )
                         
                         # Check if we have the original channel and message ID
