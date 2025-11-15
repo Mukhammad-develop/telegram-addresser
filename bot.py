@@ -337,18 +337,30 @@ class TelegramForwarder:
                         # Sort by ID to get correct order
                         sorted_group = sorted(group_messages, key=lambda x: x.id)
                         
-                        # Extract caption from the FIRST message in group (not the triggering one)
+                        # Extract caption from ANY message in group that has text
+                        # (caption could be on any photo, not necessarily the first one)
                         group_text = ""
+                        caption_msg = None
+                        
                         if sorted_group:
-                            first_msg = sorted_group[0]
-                            group_text = first_msg.text or first_msg.message or ""
+                            # Try to find a message with text/caption
+                            for msg in sorted_group:
+                                msg_text = msg.text or msg.message or ""
+                                if msg_text:
+                                    group_text = msg_text
+                                    caption_msg = msg
+                                    break
+                            
+                            # If we found a caption, process it
                             if group_text:
                                 group_text = self.text_processor.process_text(group_text)
                             
-                            # Add source link if enabled
+                            # Add source link (use first message ID for link)
                             if self.add_source_link:
                                 channel_id = str(source).replace("-100", "")
-                                message_link = f"https://t.me/c/{channel_id}/{first_msg.id}"
+                                # Use the message with caption if found, otherwise first message
+                                link_msg = caption_msg if caption_msg else sorted_group[0]
+                                message_link = f"https://t.me/c/{channel_id}/{link_msg.id}"
                                 link_text = self.source_link_text.format(link=message_link)
                                 group_text = (group_text or "") + link_text
                         
