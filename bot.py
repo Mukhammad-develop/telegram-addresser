@@ -244,13 +244,18 @@ class TelegramForwarder:
                         original_channel = None
                         original_msg_id = None
                         
-                        # Get original channel from forward info
-                        if hasattr(message.forward, 'from_id'):
-                            original_channel = message.forward.from_id
+                        # Get original channel from forward info (use chat_id, not from_id)
+                        if hasattr(message.forward, 'chat_id') and message.forward.chat_id:
+                            original_channel = message.forward.chat_id
                         
                         # Get original message ID from forward info
-                        if hasattr(message.forward, 'channel_post'):
+                        if hasattr(message.forward, 'channel_post') and message.forward.channel_post:
                             original_msg_id = message.forward.channel_post
+                        
+                        self.logger.info(
+                            f"🔍 Detected forwarded message - Original channel: {original_channel}, "
+                            f"Original message: {original_msg_id}"
+                        )
                         
                         sent_msg = None
                         
