@@ -130,6 +130,22 @@ class TelegramForwarder:
         message = event.message
         source_chat_id = event.chat_id
         
+        # Check if this message is part of a media group we've already processed
+        if message.grouped_id:
+            if message.grouped_id in self.processed_groups:
+                self.logger.debug(
+                    f"Skipping message {message.id} - already processed as part of group {message.grouped_id}"
+                )
+                return
+            # Mark this group as processed
+            self.processed_groups.add(message.grouped_id)
+            
+            # Clean up old group IDs (keep only last 100)
+            if len(self.processed_groups) > 100:
+                # Remove oldest entries
+                sorted_groups = sorted(self.processed_groups)
+                self.processed_groups = set(sorted_groups[-100:])
+        
         # Find target channel(s) for this source
         channel_pairs = self.config_manager.get_channel_pairs()
         targets = [
