@@ -331,14 +331,20 @@ def add_rule_start(call):
 def process_add_rule_step1(message):
     """Process step 1: got find text, ask for replace text."""
     try:
+        print(f"\n[STEP 1] User {message.chat.id} sent: {message.text}")
+        
         if message.text.startswith('/'):
             # User sent a command, don't process
+            print(f"[STEP 1] Ignoring command: {message.text}")
             return
         
         find_text = message.text.strip()
         if not find_text:
+            print(f"[STEP 1] Empty text received")
             bot.reply_to(message, "❌ Text cannot be empty. Try again.", reply_markup=main_menu_keyboard())
             return
+        
+        print(f"[STEP 1] Find text stored: '{find_text}'")
         
         # Store in a temporary way - using message
         markup = types.InlineKeyboardMarkup()
@@ -355,28 +361,41 @@ def process_add_rule_step1(message):
             reply_markup=markup
         )
         
+        print(f"[STEP 1] Moving to step 2, waiting for replacement text...")
+        
         # Pass find_text to next step
         bot.register_next_step_handler(msg, process_add_rule_step2, find_text)
     except Exception as e:
+        print(f"[STEP 1] ERROR: {str(e)}")
         bot.reply_to(message, f"❌ Error: {str(e)}", reply_markup=main_menu_keyboard())
 
 
 def process_add_rule_step2(message, find_text):
     """Process step 2: got replace text, ask for case sensitivity."""
     try:
+        print(f"\n[STEP 2] User {message.chat.id} sent: {message.text}")
+        print(f"[STEP 2] Find text from step 1: '{find_text}'")
+        
         if message.text.startswith('/'):
+            print(f"[STEP 2] Ignoring command: {message.text}")
             return
         
         replace_text = message.text.strip()
         if not replace_text:
+            print(f"[STEP 2] Empty text received")
             bot.reply_to(message, "❌ Text cannot be empty. Try again.", reply_markup=main_menu_keyboard())
             return
+        
+        print(f"[STEP 2] Replace text: '{replace_text}'")
         
         # Store data temporarily for this chat
         temp_storage[message.chat.id] = {
             'find_text': find_text,
             'replace_text': replace_text
         }
+        
+        print(f"[STEP 2] Stored in temp_storage for chat {message.chat.id}")
+        print(f"[STEP 2] temp_storage contents: {temp_storage}")
         
         # Ask for case sensitivity with buttons (simple callback data now)
         markup = types.InlineKeyboardMarkup(row_width=2)
@@ -397,7 +416,10 @@ def process_add_rule_step2(message, find_text):
             parse_mode='HTML',
             reply_markup=markup
         )
+        
+        print(f"[STEP 2] Waiting for Yes/No button click...")
     except Exception as e:
+        print(f"[STEP 2] ERROR: {str(e)}")
         bot.reply_to(message, f"❌ Error: {str(e)}", reply_markup=main_menu_keyboard())
 
 
@@ -405,9 +427,17 @@ def process_add_rule_step2(message, find_text):
 def finish_add_rule(call):
     """Finish adding rule with case sensitivity choice."""
     try:
+        print(f"\n[STEP 3] Button clicked: {call.data}")
+        print(f"[STEP 3] User: {call.message.chat.id}")
+        
         # Get stored data for this chat
         chat_id = call.message.chat.id
+        
+        print(f"[STEP 3] Checking temp_storage...")
+        print(f"[STEP 3] Current temp_storage: {temp_storage}")
+        
         if chat_id not in temp_storage:
+            print(f"[STEP 3] ERROR: No data in temp_storage for chat {chat_id}")
             bot.answer_callback_query(call.id, "❌ Session expired. Please start again.")
             return
         
@@ -416,7 +446,20 @@ def finish_add_rule(call):
         replace_text = data['replace_text']
         case_sensitive = call.data == "rule_case_yes"
         
+        print(f"[STEP 3] Retrieved data:")
+        print(f"  - Find: '{find_text}'")
+        print(f"  - Replace: '{replace_text}'")
+        print(f"  - Case-sensitive: {case_sensitive}")
+        
+        print(f"[STEP 3] Saving rule to config...")
         config_manager.add_replacement_rule(find_text, replace_text, case_sensitive)
+        print(f"[STEP 3] Rule saved successfully!")
+        
+        # Verify it was saved
+        config_manager.load()
+        rules = config_manager.get_replacement_rules()
+        print(f"[STEP 3] Total rules in config now: {len(rules)}")
+        print(f"[STEP 3] Last rule: {rules[-1] if rules else 'None'}")
         
         bot.edit_message_text(
             f"✅ <b>Replacement rule added successfully!</b>\n\n"
@@ -429,7 +472,11 @@ def finish_add_rule(call):
             reply_markup=main_menu_keyboard()
         )
         bot.answer_callback_query(call.id, "✅ Rule added!")
+        print(f"[STEP 3] Complete!\n")
     except Exception as e:
+        print(f"[STEP 3] ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
         bot.answer_callback_query(call.id, f"❌ Error: {str(e)}")
         # Clean up storage on error
         if call.message.chat.id in temp_storage:
@@ -739,6 +786,8 @@ def run_admin_bot():
     else:
         print("⚠️  WARNING: No admin users configured! Bot is accessible to anyone.")
     
+    print(f"\n📝 DEBUG LOGGING ENABLED")
+    print(f"   All actions will be logged to the console")
     print(f"\n🛑 Press Ctrl+C to stop\n")
     
     bot.infinity_polling()
