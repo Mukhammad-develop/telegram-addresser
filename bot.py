@@ -171,29 +171,102 @@ class TelegramForwarder:
                 if text:
                     text = self.text_processor.process_text(text)
                 
-                # Handle message with media (bypass content protection by downloading first)
+                # Get reply_to_msg_id if this is a reply
+                reply_to = None
+                if message.reply_to and message.reply_to.reply_to_msg_id:
+                    reply_to = message.reply_to.reply_to_msg_id
+                
+                # Check if message is forwarded from another channel
+                if message.forward:
+                    # This message was forwarded from somewhere, so forward it to target
+                    try:
+                        await self.client.forward_messages(target, message)
+                        self.logger.info(
+                            f"{prefix} -> Forwarded message {message.id} (originally from {message.forward.from_id}) "
+                            f"from {source} to {target}"
+                        )
+                        return True
+                    except Exception as forward_error:
+                        self.logger.warning(f"Could not forward, will copy instead: {forward_error}")
+                        # Fall through to copying method
+                
+                # Handle media groups (albums with multiple photos/videos)
+                if message.grouped_id:
+                    # This is part of a media group/album
+                    # Get all messages in this group
+                    try:
+                        messages_in_group = await self.client.get_messages(
+                            source,
+                            limit=10,
+                            min_id=message.id - 10,
+                            max_id=message.id + 10
+                        )
+                        
+                        # Filter messages with same grouped_id
+                        group_messages = [
+                            m for m in messages_in_group 
+                            if m.grouped_id == message.grouped_id
+                        ]
+                        
+                        # Download all media in the group
+                        media_files = []
+                        for msg in sorted(group_messages, key=lambda x: x.id):
+                            if msg.media:
+                                # Download with proper filename
+                                file_path = await self.client.download_media(msg)
+                                if file_path:
+                                    media_files.append(file_path)
+                        
+                        # Send all media together with caption on first one
+                        if media_files:
+                            await self.client.send_file(
+                                target,
+                                media_files,
+                                caption=text if text else None,
+                                reply_to=reply_to
+                            )
+                            self.logger.info(
+                                f"{prefix} -> Sent media group with {len(media_files)} items "
+                                f"from {source} to {target}"
+                            )
+                            return True
+                    except Exception as group_error:
+                        self.logger.warning(f"Media group handling failed: {group_error}, trying single message")
+                        # Fall through to single message handling
+                
+                # Handle single media message
                 if message.media:
                     try:
-                        # Download media to memory
-                        media_file = await self.client.download_media(message, file=bytes)
+                        # Download media with proper filename (not bytes)
+                        file_path = await self.client.download_media(message)
                         
-                        # Re-upload as new message with processed caption
-                        await self.client.send_file(
-                            target,
-                            media_file,
-                            caption=text if text else None
-                        )
+                        if file_path:
+                            # Re-upload with processed caption
+                            await self.client.send_file(
+                                target,
+                                file_path,
+                                caption=text if text else None,
+                                reply_to=reply_to
+                            )
+                        else:
+                            raise Exception("Download returned None")
+                            
                     except Exception as download_error:
-                        # If download fails, try direct send (might work for some media)
+                        # If download fails, try direct send
                         self.logger.warning(f"Download failed, trying direct send: {download_error}")
                         await self.client.send_message(
                             target,
                             text if text else None,
-                            file=message.media
+                            file=message.media,
+                            reply_to=reply_to
                         )
                 else:
                     # Send text-only message
-                    await self.client.send_message(target, text)
+                    await self.client.send_message(
+                        target, 
+                        text,
+                        reply_to=reply_to
+                    )
                 
                 self.logger.info(
                     f"{prefix} -> Copied message {message.id} "
