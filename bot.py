@@ -1,5 +1,6 @@
 """Main Telegram forwarder bot with multi-channel support."""
 import asyncio
+import json
 import os
 import shutil
 import time
@@ -14,7 +15,7 @@ from telethon.errors import (
     SlowModeWaitError,
     ChatForwardsRestrictedError
 )
-from telethon.tl.types import Message
+from telethon.tl.types import Message, MessageMediaDocument, DocumentAttributeSticker, DocumentAttributeAnimated
 
 from src.config_manager import ConfigManager
 from src.text_processor import TextProcessor
@@ -76,7 +77,46 @@ class TelegramForwarder:
         self.temp_media_dir = Path("temp_media")
         self.temp_media_dir.mkdir(exist_ok=True)
         
+        # Track which channel pairs have been backfilled to avoid duplicates
+        self.backfill_tracking_file = Path("backfill_tracking.json")
+        self.backfilled_pairs: Set[str] = self._load_backfill_tracking()
+        
         self.logger.info("TelegramForwarder initialized")
+    
+    def _load_backfill_tracking(self) -> Set[str]:
+        """Load backfill tracking from file."""
+        if self.backfill_tracking_file.exists():
+            try:
+                with open(self.backfill_tracking_file, 'r') as f:
+                    data = json.load(f)
+                    return set(data.get("backfilled_pairs", []))
+            except Exception as e:
+                self.logger.warning(f"Failed to load backfill tracking: {e}")
+        return set()
+    
+    def _save_backfill_tracking(self) -> None:
+        """Save backfill tracking to file."""
+        try:
+            with open(self.backfill_tracking_file, 'w') as f:
+                json.dump({"backfilled_pairs": list(self.backfilled_pairs)}, f, indent=2)
+        except Exception as e:
+            self.logger.error(f"Failed to save backfill tracking: {e}")
+    
+    def _get_pair_key(self, source: int, target: int) -> str:
+        """Generate a unique key for a channel pair."""
+        return f"{source}:{target}"
+    
+    def _is_sticker_or_animated(self, message: Message) -> bool:
+        """Check if message contains a sticker or animated sticker."""
+        if not message.media or not isinstance(message.media, MessageMediaDocument):
+            return False
+        
+        # Check document attributes for sticker or animated
+        if hasattr(message.media, 'document') and hasattr(message.media.document, 'attributes'):
+            for attr in message.media.document.attributes:
+                if isinstance(attr, (DocumentAttributeSticker, DocumentAttributeAnimated)):
+                    return True
+        return False
     
     async def start(self) -> None:
         """Start the bot and set up event handlers."""
@@ -113,11 +153,19 @@ class TelegramForwarder:
         async def handler(event):
             await self.handle_new_message(event)
         
-        # Backfill recent messages for each channel pair
+        # Backfill recent messages for NEW channel pairs only (to avoid duplicates)
         for pair in channel_pairs:
             backfill_count = pair.get("backfill_count", 0)
             if backfill_count > 0:
-                await self.backfill_messages(pair["source"], pair["target"], backfill_count)
+                pair_key = self._get_pair_key(pair["source"], pair["target"])
+                if pair_key not in self.backfilled_pairs:
+                    self.logger.info(f"🔄 New pair detected, backfilling: {pair['source']} -> {pair['target']}")
+                    await self.backfill_messages(pair["source"], pair["target"], backfill_count)
+                    # Mark as backfilled
+                    self.backfilled_pairs.add(pair_key)
+                    self._save_backfill_tracking()
+                else:
+                    self.logger.info(f"✓ Pair already backfilled, skipping: {pair['source']} -> {pair['target']}")
         
         self.logger.info("Bot is now running. Press Ctrl+C to stop.")
         
@@ -447,6 +495,36 @@ class TelegramForwarder:
                 
                 # Handle single media message
                 if message.media:
+                    # Check if it's a sticker or animated sticker - send directly without downloading
+                    if self._is_sticker_or_animated(message):
+                        self.logger.debug(f"Detected sticker/animated emoji, sending directly without download")
+                        # Preserve entities ONLY if text wasn't modified
+                        formatting_entities = None
+                        if not text_was_modified and hasattr(message, 'entities'):
+                            formatting_entities = message.entities
+                        
+                        sent_msg = await self.client.send_file(
+                            target,
+                            message.media,
+                            caption=text if text else None,
+                            reply_to=reply_to,
+                            formatting_entities=formatting_entities
+                        )
+                        
+                        # Store message ID mapping for reply chains
+                        if sent_msg:
+                            map_key = f"{source}:{message.id}"
+                            self.message_id_map[map_key] = sent_msg.id
+                            # Clean up old mappings (keep last 1000)
+                            if len(self.message_id_map) > 1000:
+                                keys_to_remove = list(self.message_id_map.keys())[:200]
+                                for key in keys_to_remove:
+                                    del self.message_id_map[key]
+                        
+                        self.logger.info(f"{prefix} -> Sent sticker/emoji {message.id} from {source} to {target}")
+                        return True
+                    
+                    # For non-stickers, download and re-upload
                     file_path = None
                     try:
                         # Download media to temp directory
@@ -659,11 +737,8 @@ class TelegramForwarder:
                     self.logger.debug(f"Backfill message {message.id} filtered out")
                     continue
                 
-                # Copy with retry
+                # Copy with retry (no delay - let retry logic handle rate limits)
                 await self.forward_message_with_retry(message, source, target, is_backfill=True)
-                
-                # Small delay to avoid rate limits
-                await asyncio.sleep(1)
             
             self.logger.info(f"Backfill completed for {source} -> {target}")
             
