@@ -154,18 +154,27 @@ class TelegramForwarder:
             await self.handle_new_message(event)
         
         # Backfill recent messages for NEW channel pairs only (to avoid duplicates)
+        self.logger.info(f"📋 Checking backfill status for {len(channel_pairs)} channel pair(s)")
+        self.logger.info(f"📋 Currently tracked as backfilled: {list(self.backfilled_pairs)}")
+        
         for pair in channel_pairs:
             backfill_count = pair.get("backfill_count", 0)
+            pair_key = self._get_pair_key(pair["source"], pair["target"])
+            
+            self.logger.info(f"📋 Pair: {pair['source']} -> {pair['target']}, backfill_count: {backfill_count}, pair_key: {pair_key}")
+            
             if backfill_count > 0:
-                pair_key = self._get_pair_key(pair["source"], pair["target"])
                 if pair_key not in self.backfilled_pairs:
-                    self.logger.info(f"🔄 New pair detected, backfilling: {pair['source']} -> {pair['target']}")
+                    self.logger.info(f"🔄 NEW PAIR DETECTED - Starting backfill: {pair['source']} -> {pair['target']}")
                     await self.backfill_messages(pair["source"], pair["target"], backfill_count)
                     # Mark as backfilled
                     self.backfilled_pairs.add(pair_key)
                     self._save_backfill_tracking()
+                    self.logger.info(f"✅ Backfill completed and tracked for: {pair_key}")
                 else:
-                    self.logger.info(f"✓ Pair already backfilled, skipping: {pair['source']} -> {pair['target']}")
+                    self.logger.info(f"⏭️  SKIPPING - Pair already backfilled: {pair['source']} -> {pair['target']}")
+            else:
+                self.logger.info(f"⏭️  SKIPPING - backfill_count is 0 for: {pair['source']} -> {pair['target']}")
         
         self.logger.info("Bot is now running. Press Ctrl+C to stop.")
         
