@@ -198,18 +198,29 @@ class TelegramForwarder:
         
         while attempt < self.retry_attempts:
             try:
-                # Get message text/caption and apply replacements
-                text = message.text or message.message or ""
+                # Get message text/caption - use message.message for plain text (not .text which adds markdown)
+                original_text = message.message or ""
+                text = original_text
+                
+                # Track if text was modified (modifications break entity offsets)
+                text_was_modified = False
+                
+                # Apply replacement rules
                 if text:
-                    text = self.text_processor.process_text(text)
+                    processed_text = self.text_processor.process_text(text)
+                    if processed_text != text:
+                        text = processed_text
+                        text_was_modified = True
                 
                 # Add source link if enabled (for testing/verification)
+                # Note: Adding text at the END doesn't break entity offsets at the start
                 if self.add_source_link:
                     # Convert channel ID to link format (remove -100 prefix)
                     channel_id = str(source).replace("-100", "")
                     message_link = f"https://t.me/c/{channel_id}/{message.id}"
                     link_text = self.source_link_text.format(link=message_link)
                     text = (text or "") + link_text
+                    # Don't set text_was_modified here since we only append at the end
                 
                 # Get reply_to_msg_id if this is a reply
                 reply_to = None
@@ -341,11 +352,12 @@ class TelegramForwarder:
                         # (caption could be on any photo, not necessarily the first one)
                         group_text = ""
                         caption_msg = None
+                        group_text_was_modified = False
                         
                         if sorted_group:
                             # Try to find a message with text/caption
                             for msg in sorted_group:
-                                msg_text = msg.text or msg.message or ""
+                                msg_text = msg.message or ""  # Use .message not .text to avoid markdown
                                 if msg_text:
                                     group_text = msg_text
                                     caption_msg = msg
@@ -353,7 +365,10 @@ class TelegramForwarder:
                             
                             # If we found a caption, process it
                             if group_text:
-                                group_text = self.text_processor.process_text(group_text)
+                                processed_group_text = self.text_processor.process_text(group_text)
+                                if processed_group_text != group_text:
+                                    group_text = processed_group_text
+                                    group_text_was_modified = True
                             
                             # Add source link (use first message ID for link)
                             if self.add_source_link:
@@ -377,9 +392,9 @@ class TelegramForwarder:
                         
                         # Send all media together with caption from first message
                         if media_files:
-                            # Get formatting entities from the caption message if available
+                            # Preserve entities (including custom emojis) ONLY if text wasn't modified
                             formatting_entities = None
-                            if caption_msg and hasattr(caption_msg, 'entities'):
+                            if not group_text_was_modified and caption_msg and hasattr(caption_msg, 'entities'):
                                 formatting_entities = caption_msg.entities
                             
                             sent_msg = await self.client.send_file(
@@ -442,8 +457,10 @@ class TelegramForwarder:
                         
                         if file_path:
                             # Re-upload with processed caption
-                            # Preserve original formatting entities
-                            formatting_entities = message.entities if hasattr(message, 'entities') else None
+                            # Preserve entities (including custom emojis) ONLY if text wasn't modified
+                            formatting_entities = None
+                            if not text_was_modified and hasattr(message, 'entities'):
+                                formatting_entities = message.entities
                             
                             sent_msg = await self.client.send_file(
                                 target,
@@ -474,8 +491,10 @@ class TelegramForwarder:
                     except Exception as download_error:
                         # If download fails, try direct send
                         self.logger.warning(f"Download failed, trying direct send: {download_error}")
-                        # Preserve original formatting entities
-                        formatting_entities = message.entities if hasattr(message, 'entities') else None
+                        # Preserve entities ONLY if text wasn't modified
+                        formatting_entities = None
+                        if not text_was_modified and hasattr(message, 'entities'):
+                            formatting_entities = message.entities
                         
                         await self.client.send_message(
                             target,
@@ -493,8 +512,10 @@ class TelegramForwarder:
                                 pass
                 else:
                     # Send text-only message
-                    # Preserve original formatting entities
-                    formatting_entities = message.entities if hasattr(message, 'entities') else None
+                    # Preserve entities (including custom emojis) ONLY if text wasn't modified
+                    formatting_entities = None
+                    if not text_was_modified and hasattr(message, 'entities'):
+                        formatting_entities = message.entities
                     
                     sent_msg = await self.client.send_message(
                         target, 
