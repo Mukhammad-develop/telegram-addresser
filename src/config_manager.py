@@ -105,13 +105,14 @@ class ConfigManager:
         """Get text replacement rules."""
         return self.config.get("replacement_rules", [])
     
-    def add_replacement_rule(self, find: str, replace: str, case_sensitive: bool = False) -> None:
+    def add_replacement_rule(self, find: str, replace: str, case_sensitive: bool = False, is_regex: bool = False) -> None:
         """Add a new replacement rule."""
         with self._lock:
             rule = {
                 "find": find,
                 "replace": replace,
-                "case_sensitive": case_sensitive
+                "case_sensitive": case_sensitive,
+                "is_regex": is_regex
             }
             self.config.setdefault("replacement_rules", []).append(rule)
             self.save()

@@ -287,7 +287,8 @@ def show_rules(call):
     if rules:
         for i, rule in enumerate(rules):
             case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
-            text += f"<b>Rule {i+1}</b> ({case})\n"
+            regex = " | 🔣 Regex" if rule.get("is_regex") else ""
+            text += f"<b>Rule {i+1}</b> ({case}{regex})\n"
             text += f"  Find: <code>{rule['find']}</code>\n"
             text += f"  Replace: <code>{rule['replace']}</code>\n\n"
     else:
@@ -316,9 +317,10 @@ def add_rule_start(call):
     markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="menu_rules"))
     
     bot.edit_message_text(
-        "🔄 <b>Add Replacement Rule - Step 1/3</b>\n\n"
+        "🔄 <b>Add Replacement Rule - Step 1/4</b>\n\n"
         "What text should I <b>find</b> in messages?\n\n"
-        "Example: <code>Elite</code> or <code>https://old.com</code>\n\n"
+        "Example: <code>Elite</code> or <code>https://old.com</code>\n"
+        "Regex example: <code>https://t\\.me/c/123/\\d+</code>\n\n"
         "Send the text you want to find:",
         call.message.chat.id,
         call.message.message_id,
@@ -352,7 +354,7 @@ def process_add_rule_step1(message):
         
         msg = bot.send_message(
             message.chat.id,
-            f"🔄 <b>Add Replacement Rule - Step 2/3</b>\n\n"
+            f"🔄 <b>Add Replacement Rule - Step 2/4</b>\n\n"
             f"Find: <code>{find_text}</code>\n\n"
             f"What text should I <b>replace</b> it with?\n\n"
             f"Example: <code>Premium</code> or <code>https://new.com</code>\n\n"
@@ -407,7 +409,7 @@ def process_add_rule_step2(message, find_text):
         
         bot.send_message(
             message.chat.id,
-            f"🔄 <b>Add Replacement Rule - Step 3/3</b>\n\n"
+            f"🔄 <b>Add Replacement Rule - Step 3/4</b>\n\n"
             f"Find: <code>{find_text}</code>\n"
             f"Replace: <code>{replace_text}</code>\n\n"
             f"Should matching be <b>case-sensitive</b>?\n\n"
@@ -424,8 +426,8 @@ def process_add_rule_step2(message, find_text):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("rule_case_"))
-def finish_add_rule(call):
-    """Finish adding rule with case sensitivity choice."""
+def ask_regex(call):
+    """Ask if the rule is a regex pattern."""
     try:
         print(f"\n[STEP 3] Button clicked: {call.data}")
         print(f"[STEP 3] User: {call.message.chat.id}")
@@ -441,40 +443,107 @@ def finish_add_rule(call):
             bot.answer_callback_query(call.id, "❌ Session expired. Please start again.")
             return
         
-        data = temp_storage.pop(chat_id)  # Get and remove from storage
-        find_text = data['find_text']
-        replace_text = data['replace_text']
-        case_sensitive = call.data == "rule_case_yes"
+        # Store case sensitivity in temp storage
+        temp_storage[chat_id]['case_sensitive'] = (call.data == "rule_case_yes")
         
-        print(f"[STEP 3] Retrieved data:")
+        find_text = temp_storage[chat_id]['find_text']
+        replace_text = temp_storage[chat_id]['replace_text']
+        case_sensitive = temp_storage[chat_id]['case_sensitive']
+        
+        print(f"[STEP 3] Current data:")
         print(f"  - Find: '{find_text}'")
         print(f"  - Replace: '{replace_text}'")
         print(f"  - Case-sensitive: {case_sensitive}")
         
-        print(f"[STEP 3] Saving rule to config...")
-        config_manager.add_replacement_rule(find_text, replace_text, case_sensitive)
-        print(f"[STEP 3] Rule saved successfully!")
+        # Ask for regex with buttons
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("✅ Yes (Regex)", callback_data="rule_regex_yes"),
+            types.InlineKeyboardButton("❌ No (Exact)", callback_data="rule_regex_no")
+        )
+        markup.add(types.InlineKeyboardButton("🔙 Cancel", callback_data="menu_rules"))
+        
+        bot.edit_message_text(
+            f"🔄 <b>Add Replacement Rule - Step 4/4</b>\n\n"
+            f"Find: <code>{find_text}</code>\n"
+            f"Replace: <code>{replace_text}</code>\n"
+            f"Case-sensitive: {'Yes' if case_sensitive else 'No'}\n\n"
+            f"Is this a <b>regex pattern</b>?\n\n"
+            f"• <b>Yes (Regex)</b> = Pattern like <code>https://t\\.me/c/123/\\d+</code>\n"
+            f"• <b>No (Exact)</b> = Exact text like <code>hello world</code>\n\n"
+            f"⚠️ <i>Note: Regex replacements may break emoji/formatting</i>",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        bot.answer_callback_query(call.id)
+        print(f"[STEP 3] Waiting for regex Yes/No button click...")
+    except Exception as e:
+        print(f"[STEP 3] ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}")
+        # Clean up storage on error
+        if call.message.chat.id in temp_storage:
+            temp_storage.pop(call.message.chat.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("rule_regex_"))
+def finish_add_rule(call):
+    """Finish adding rule with regex choice."""
+    try:
+        print(f"\n[STEP 4] Button clicked: {call.data}")
+        print(f"[STEP 4] User: {call.message.chat.id}")
+        
+        # Get stored data for this chat
+        chat_id = call.message.chat.id
+        
+        print(f"[STEP 4] Checking temp_storage...")
+        print(f"[STEP 4] Current temp_storage: {temp_storage}")
+        
+        if chat_id not in temp_storage:
+            print(f"[STEP 4] ERROR: No data in temp_storage for chat {chat_id}")
+            bot.answer_callback_query(call.id, "❌ Session expired. Please start again.")
+            return
+        
+        data = temp_storage.pop(chat_id)  # Get and remove from storage
+        find_text = data['find_text']
+        replace_text = data['replace_text']
+        case_sensitive = data['case_sensitive']
+        is_regex = call.data == "rule_regex_yes"
+        
+        print(f"[STEP 4] Retrieved data:")
+        print(f"  - Find: '{find_text}'")
+        print(f"  - Replace: '{replace_text}'")
+        print(f"  - Case-sensitive: {case_sensitive}")
+        print(f"  - Is regex: {is_regex}")
+        
+        print(f"[STEP 4] Saving rule to config...")
+        config_manager.add_replacement_rule(find_text, replace_text, case_sensitive, is_regex)
+        print(f"[STEP 4] Rule saved successfully!")
         
         # Verify it was saved
         config_manager.load()
         rules = config_manager.get_replacement_rules()
-        print(f"[STEP 3] Total rules in config now: {len(rules)}")
-        print(f"[STEP 3] Last rule: {rules[-1] if rules else 'None'}")
+        print(f"[STEP 4] Total rules in config now: {len(rules)}")
+        print(f"[STEP 4] Last rule: {rules[-1] if rules else 'None'}")
         
         bot.edit_message_text(
             f"✅ <b>Replacement rule added successfully!</b>\n\n"
             f"Find: <code>{find_text}</code>\n"
             f"Replace: <code>{replace_text}</code>\n"
-            f"Case-sensitive: {'Yes' if case_sensitive else 'No'}",
+            f"Case-sensitive: {'Yes' if case_sensitive else 'No'}\n"
+            f"Regex: {'Yes' if is_regex else 'No'}",
             call.message.chat.id,
             call.message.message_id,
             parse_mode='HTML',
             reply_markup=main_menu_keyboard()
         )
         bot.answer_callback_query(call.id, "✅ Rule added!")
-        print(f"[STEP 3] Complete!\n")
+        print(f"[STEP 4] Complete!\n")
     except Exception as e:
-        print(f"[STEP 3] ERROR: {str(e)}")
+        print(f"[STEP 4] ERROR: {str(e)}")
         import traceback
         traceback.print_exc()
         bot.answer_callback_query(call.id, f"❌ Error: {str(e)}")

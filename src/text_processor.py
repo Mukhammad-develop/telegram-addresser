@@ -32,16 +32,29 @@ class TextProcessor:
             find = rule.get("find", "")
             replace = rule.get("replace", "")
             case_sensitive = rule.get("case_sensitive", False)
+            is_regex = rule.get("is_regex", False)
             
             if not find:
                 continue
             
-            if case_sensitive:
-                processed = processed.replace(find, replace)
-            else:
-                # Case-insensitive replacement
-                pattern = re.compile(re.escape(find), re.IGNORECASE)
-                processed = pattern.sub(replace, processed)
+            try:
+                if is_regex:
+                    # Use regex pattern directly (user must provide valid regex)
+                    flags = 0 if case_sensitive else re.IGNORECASE
+                    pattern = re.compile(find, flags)
+                    processed = pattern.sub(replace, processed)
+                else:
+                    # Exact string replacement
+                    if case_sensitive:
+                        processed = processed.replace(find, replace)
+                    else:
+                        # Case-insensitive replacement (escape special chars)
+                        pattern = re.compile(re.escape(find), re.IGNORECASE)
+                        processed = pattern.sub(replace, processed)
+            except re.error as e:
+                # Invalid regex pattern - log and skip this rule
+                print(f"⚠️ Invalid regex pattern '{find}': {e}")
+                continue
         
         return processed
     

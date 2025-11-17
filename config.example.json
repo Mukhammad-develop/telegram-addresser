@@ -18,17 +18,26 @@
     {
       "find": "Elite",
       "replace": "Excellent",
-      "case_sensitive": false
+      "case_sensitive": false,
+      "is_regex": false
     },
     {
       "find": "United",
       "replace": "Skúška",
-      "case_sensitive": false
+      "case_sensitive": false,
+      "is_regex": false
     },
     {
       "find": "https://wa.me/1234567890",
       "replace": "https://wa.me/YOUR_NUMBER",
-      "case_sensitive": true
+      "case_sensitive": true,
+      "is_regex": false
+    },
+    {
+      "find": "https://t\\.me/c/1234567890/\\d+",
+      "replace": "https://t.me/+YOUR_INVITE_LINK",
+      "case_sensitive": true,
+      "is_regex": true
     }
   ],
   "filters": {
