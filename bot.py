@@ -81,6 +81,9 @@ class TelegramForwarder:
         self.backfill_tracking_file = Path("backfill_tracking.json")
         self.backfilled_pairs: Set[str] = self._load_backfill_tracking()
         
+        # File-based trigger for auto-backfill (created by admin bot)
+        self.backfill_trigger_file = Path("trigger_backfill.flag")
+        
         self.logger.info("TelegramForwarder initialized")
     
     def _load_backfill_tracking(self) -> Set[str]:
@@ -117,6 +120,66 @@ class TelegramForwarder:
                 if isinstance(attr, (DocumentAttributeSticker, DocumentAttributeAnimated)):
                     return True
         return False
+    
+    async def _check_and_backfill_new_pairs(self) -> None:
+        """Check for new channel pairs and backfill them automatically."""
+        try:
+            # Reload config to get latest pairs
+            self.config_manager.load()
+            channel_pairs = self.config_manager.get_channel_pairs()
+            
+            new_pairs_found = False
+            
+            for pair in channel_pairs:
+                backfill_count = pair.get("backfill_count", 0)
+                if backfill_count > 0:
+                    pair_key = self._get_pair_key(pair["source"], pair["target"])
+                    
+                    # Check if this is a new pair that hasn't been backfilled
+                    if pair_key not in self.backfilled_pairs:
+                        new_pairs_found = True
+                        self.logger.info(f"🆕 Auto-detected NEW pair, starting backfill: {pair['source']} -> {pair['target']}")
+                        
+                        # Backfill the new pair
+                        await self.backfill_messages(pair["source"], pair["target"], backfill_count)
+                        
+                        # Mark as backfilled
+                        self.backfilled_pairs.add(pair_key)
+                        self._save_backfill_tracking()
+                        
+                        self.logger.info(f"✅ Auto-backfill completed for: {pair['source']} -> {pair['target']}")
+            
+            if not new_pairs_found:
+                self.logger.info("ℹ️ No new pairs detected for backfill")
+                
+        except Exception as e:
+            self.logger.error(f"Error during auto-backfill check: {e}")
+    
+    async def _monitor_backfill_trigger(self) -> None:
+        """Monitor for backfill trigger file and process new pairs automatically."""
+        while True:
+            try:
+                # Check every 5 seconds
+                await asyncio.sleep(5)
+                
+                # Check if trigger file exists
+                if self.backfill_trigger_file.exists():
+                    self.logger.info("🔔 Backfill trigger detected! Checking for new pairs...")
+                    
+                    # Process new pairs
+                    await self._check_and_backfill_new_pairs()
+                    
+                    # Remove trigger file
+                    try:
+                        self.backfill_trigger_file.unlink()
+                        self.logger.info("🗑️ Trigger file removed")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to remove trigger file: {e}")
+                        
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"Error in backfill trigger monitor: {e}")
     
     async def start(self) -> None:
         """Start the bot and set up event handlers."""
@@ -178,8 +241,20 @@ class TelegramForwarder:
         
         self.logger.info("Bot is now running. Press Ctrl+C to stop.")
         
+        # Start background task to monitor for backfill triggers
+        self.logger.info("🔍 Starting auto-backfill monitor (checks every 5 seconds)")
+        monitor_task = asyncio.create_task(self._monitor_backfill_trigger())
+        
         # Keep the bot running
-        await self.client.run_until_disconnected()
+        try:
+            await self.client.run_until_disconnected()
+        finally:
+            # Cancel monitor task on shutdown
+            monitor_task.cancel()
+            try:
+                await monitor_task
+            except asyncio.CancelledError:
+                pass
     
     async def handle_new_message(self, event) -> None:
         """

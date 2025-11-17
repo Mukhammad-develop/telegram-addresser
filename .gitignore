@@ -60,6 +60,7 @@ config.json
 config_1.json
 config.json.backup
 backfill_tracking.json
+trigger_backfill.flag
 
 # IDE
 .vscode/

@@ -3,6 +3,7 @@ import telebot
 from telebot import types
 import json
 import os
+from pathlib import Path
 from src.config_manager import ConfigManager
 
 # Load configuration
@@ -193,15 +194,21 @@ def process_add_channel_pair(message):
         
         config_manager.add_channel_pair(source, target, backfill)
         
+        # Create trigger file to notify main bot about new pair
+        trigger_file = Path("trigger_backfill.flag")
+        try:
+            trigger_file.touch()
+            auto_backfill_msg = "🔔 <b>Auto-backfill triggered!</b> The main bot will automatically backfill this pair within 5-10 seconds (no restart needed)."
+        except Exception as e:
+            auto_backfill_msg = f"⚠️ Could not create trigger file: {e}\nPlease restart the main bot manually: <code>./start.sh</code>"
+        
         bot.reply_to(
             message,
             f"✅ <b>Channel pair added!</b>\n\n"
             f"Source: <code>{source}</code>\n"
             f"Target: <code>{target}</code>\n"
             f"Backfill: {backfill}\n\n"
-            f"⚠️ <b>IMPORTANT:</b> You MUST restart the main bot now:\n"
-            f"<code>./start.sh</code>\n\n"
-            f"The bot will automatically backfill ONLY this new pair (no duplicates in old channels!).",
+            f"{auto_backfill_msg}",
             parse_mode='HTML',
             reply_markup=main_menu_keyboard()
         )
