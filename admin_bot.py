@@ -179,6 +179,18 @@ def process_add_channel_pair(message):
         target = int(parts[1])
         backfill = int(parts[2]) if len(parts) > 2 else 10
         
+        # Auto-fix: Ensure channel IDs have -100 prefix for supergroups/channels
+        # If ID is positive or doesn't start with -100, add the prefix
+        if source > 0:
+            source = int(f"-100{source}")
+        elif source < 0 and not str(source).startswith("-100"):
+            source = int(f"-100{abs(source)}")
+        
+        if target > 0:
+            target = int(f"-100{target}")
+        elif target < 0 and not str(target).startswith("-100"):
+            target = int(f"-100{abs(target)}")
+        
         config_manager.add_channel_pair(source, target, backfill)
         
         bot.reply_to(
