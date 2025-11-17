@@ -199,7 +199,9 @@ def process_add_channel_pair(message):
             f"Source: <code>{source}</code>\n"
             f"Target: <code>{target}</code>\n"
             f"Backfill: {backfill}\n\n"
-            f"Don't forget to restart the forwarder bot!",
+            f"⚠️ <b>IMPORTANT:</b> You MUST restart the main bot now:\n"
+            f"<code>./start.sh</code>\n\n"
+            f"The bot will automatically backfill ONLY this new pair (no duplicates in old channels!).",
             parse_mode='HTML',
             reply_markup=main_menu_keyboard()
         )
