@@ -13,6 +13,7 @@ Automatically forwards messages from multiple Telegram channels to other channel
 - **Media support** (photos, videos, documents, albums)
 - **24/7 operation** (runs continuously)
 - **Web admin panel** (easy configuration)
+- **Multi-worker mode** (NEW v0.6! Multiple API accounts for better performance)
 
 ---
 
@@ -71,6 +72,8 @@ First time you'll need to:
 3. Enter 2FA password (if enabled)
 
 **Done!** Bot is now forwarding messages.
+
+> 💡 **Tip:** Want multi-worker mode? See the "Multi-Worker Mode" section in `config.example.json`. The start script automatically detects which mode to use!
 
 ---
 

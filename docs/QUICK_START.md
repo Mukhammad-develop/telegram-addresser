@@ -8,6 +8,8 @@ Get your Telegram Forwarder Bot running in 5 minutes!
 - Telegram account
 - API credentials from https://my.telegram.org
 
+> 💡 **New in v0.6:** Multi-worker mode for better performance! See below for setup.
+
 ## 🚀 Installation (3 steps)
 
 ### Step 1: Get API Credentials
@@ -73,6 +75,56 @@ First time you run, you'll need to:
 3. Enter 2FA password if you have it enabled
 
 Done! Bot is now running.
+
+---
+
+## 🚀 Multi-Worker Mode (v0.6+)
+
+Want to use **multiple Telegram accounts** for better performance? The bot auto-detects multi-worker mode!
+
+### Setup Multi-Worker:
+
+**Edit `config.json`:**
+```json
+{
+  "admin_bot_token": "YOUR_BOT_TOKEN",
+  "admin_user_ids": [123456789],
+  "workers": [
+    {
+      "worker_id": "worker_1",
+      "api_credentials": {
+        "api_id": 12345678,
+        "api_hash": "abc123...",
+        "session_name": "worker_1_session"
+      },
+      "channel_pairs": [...]
+    },
+    {
+      "worker_id": "worker_2",
+      "api_credentials": {
+        "api_id": 87654321,
+        "api_hash": "xyz789...",
+        "session_name": "worker_2_session"
+      },
+      "channel_pairs": [...]
+    }
+  ]
+}
+```
+
+**Run the same command:**
+```bash
+./start.sh  # Automatically detects multi-worker mode!
+```
+
+**Benefits:**
+- ✅ Bypass rate limits (20 msg/min per worker)
+- ✅ Better fault tolerance (one crash doesn't stop others)
+- ✅ Higher throughput for busy channels
+
+See [V0.6_FEATURES.md](V0.6_FEATURES.md) for full multi-worker documentation.
+
+---
 
 ## 🎛️ Admin Panel (Optional)
 

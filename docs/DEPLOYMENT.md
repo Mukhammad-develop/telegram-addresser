@@ -6,9 +6,11 @@ This guide will help you deploy the Telegram Forwarder Bot on a VPS for 24/7 ope
 
 - A VPS or dedicated server (Ubuntu 20.04+ or Debian 10+ recommended)
 - SSH access to your server
-- At least 512MB RAM and 1GB disk space
+- At least 512MB RAM and 1GB disk space (1GB+ for multi-worker)
 - Python 3.8 or higher
-- Telegram API credentials
+- Telegram API credentials (1 set for single-worker, multiple for multi-worker)
+
+> 💡 **New in v0.6:** Multi-worker support! Deploy with multiple API accounts for better performance.
 
 ## 🖥️ Recommended VPS Providers
 
@@ -236,6 +238,116 @@ tail -f /var/log/telegram-forwarder/output.log
 #### 6.2 Send a test message
 
 Send a message to one of your source channels and verify it gets forwarded.
+
+---
+
+## 🚀 Multi-Worker Deployment (v0.6+)
+
+Want to use multiple Telegram API accounts for better performance? The same `./start.sh` script auto-detects multi-worker mode!
+
+### Step 1: Get Multiple API Credentials
+
+1. Visit https://my.telegram.org
+2. Create **2-3 separate apps** (use different names)
+3. Save each `api_id` and `api_hash`
+
+### Step 2: Configure Multi-Worker Mode
+
+Edit `config.json`:
+```json
+{
+  "admin_bot_token": "YOUR_BOT_TOKEN",
+  "admin_user_ids": [123456789],
+  "workers": [
+    {
+      "worker_id": "worker_1",
+      "api_credentials": {
+        "api_id": 12345678,
+        "api_hash": "first_api_hash",
+        "session_name": "worker_1_session"
+      },
+      "channel_pairs": [
+        {"source": -1001111, "target": -1002222, "enabled": true, "backfill_count": 10}
+      ],
+      "replacement_rules": [],
+      "filters": {"enabled": false, "mode": "whitelist", "keywords": []},
+      "settings": {
+        "retry_attempts": 5,
+        "retry_delay": 5,
+        "flood_wait_extra_delay": 10,
+        "max_message_length": 4096,
+        "log_level": "INFO"
+      }
+    },
+    {
+      "worker_id": "worker_2",
+      "api_credentials": {
+        "api_id": 87654321,
+        "api_hash": "second_api_hash",
+        "session_name": "worker_2_session"
+      },
+      "channel_pairs": [
+        {"source": -1003333, "target": -1004444, "enabled": true, "backfill_count": 10}
+      ],
+      "replacement_rules": [],
+      "filters": {"enabled": false, "mode": "whitelist", "keywords": []},
+      "settings": {
+        "retry_attempts": 5,
+        "retry_delay": 5,
+        "flood_wait_extra_delay": 10,
+        "max_message_length": 4096,
+        "log_level": "INFO"
+      }
+    }
+  ]
+}
+```
+
+### Step 3: Authenticate Each Worker
+
+Run manually first to authenticate each API account:
+
+```bash
+source venv/bin/activate
+python bot.py --config config.json
+```
+
+You'll be prompted to:
+1. Authenticate for worker_1 (enter phone, code, 2FA)
+2. Authenticate for worker_2 (enter phone, code, 2FA)
+
+After successful auth, press Ctrl+C.
+
+### Step 4: Start Multi-Worker Service
+
+The systemd service automatically detects multi-worker mode:
+
+```bash
+sudo systemctl start telegram-forwarder
+sudo systemctl status telegram-forwarder
+```
+
+### Step 5: Verify All Workers Running
+
+Check logs:
+```bash
+tail -f logs/worker_manager.log
+```
+
+You should see:
+```
+Worker worker_1 started with PID 12345
+Worker worker_2 started with PID 12346
+```
+
+**Benefits:**
+- ✅ 40+ messages/minute (20 per worker)
+- ✅ Better fault tolerance
+- ✅ Load distribution across accounts
+
+See [V0.6_FEATURES.md](V0.6_FEATURES.md) for complete multi-worker documentation.
+
+---
 
 ## 🎛️ Optional: Set Up Admin Panel
 
