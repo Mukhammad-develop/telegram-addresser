@@ -1463,6 +1463,14 @@ def confirm_remove_worker(call):
     worker_id = call.data.replace("confirm_remove_", "")
     
     try:
+        # Get worker config before removing (to get session_name)
+        config_manager.load()
+        config = config_manager.config
+        workers_config = config.get("workers", [])
+        
+        worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+        session_name = worker_cfg.get("session_name", "") if worker_cfg else ""
+        
         # Stop worker if running
         manager = get_worker_manager()
         if worker_id in manager.workers:
@@ -1471,20 +1479,45 @@ def confirm_remove_worker(call):
                 worker.stop()
         
         # Remove from config
-        config_manager.load()
-        config = config_manager.config
-        workers_config = config.get("workers", [])
-        
         workers_config = [w for w in workers_config if w["worker_id"] != worker_id]
         config["workers"] = workers_config
         config_manager.config = config
         config_manager.save()
         
+        # Delete worker files
+        files_deleted = []
+        
+        # 1. Delete session files
+        if session_name:
+            session_file = Path(f"{session_name}.session")
+            session_journal = Path(f"{session_name}.session-journal")
+            
+            if session_file.exists():
+                session_file.unlink()
+                files_deleted.append(f"{session_name}.session")
+            
+            if session_journal.exists():
+                session_journal.unlink()
+                files_deleted.append(f"{session_name}.session-journal")
+        
+        # 2. Delete temp worker config
+        temp_config = Path(f"worker_{worker_id}_config.json")
+        if temp_config.exists():
+            temp_config.unlink()
+            files_deleted.append(f"worker_{worker_id}_config.json")
+        
         # Reload worker manager
         global worker_manager_instance
         worker_manager_instance = None
         
-        bot.answer_callback_query(call.id, f"✅ Worker {worker_id} removed!", show_alert=True)
+        # Success message with details
+        msg = f"✅ Worker {worker_id} removed!"
+        if files_deleted:
+            msg += f"\n\n🗑️ Deleted files:\n"
+            for f in files_deleted:
+                msg += f"• {f}\n"
+        
+        bot.answer_callback_query(call.id, msg, show_alert=True)
         
         # Go back to workers menu
         show_workers(call)
