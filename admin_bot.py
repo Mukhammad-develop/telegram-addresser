@@ -126,8 +126,36 @@ def back_to_main(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_channels")
 def show_channels(call):
-    """Show channel pairs."""
+    """Show channel pairs - check if multi-worker mode first."""
     config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    # Multi-worker mode: ask which worker
+    if workers_config:
+        text = "📡 <b>Channel Pairs</b>\n\n"
+        text += "Select a worker to manage its channel pairs:\n\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        
+        for worker_cfg in workers_config:
+            worker_id = worker_cfg["worker_id"]
+            pairs_count = len(worker_cfg.get("channel_pairs", []))
+            button_text = f"👷 {worker_id} ({pairs_count} pairs)"
+            markup.add(types.InlineKeyboardButton(button_text, callback_data=f"channels_worker_{worker_id}"))
+        
+        markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        return
+    
+    # Single-worker mode: show global pairs
     pairs = config_manager.get_all_channel_pairs()
     
     text = "📡 <b>Channel Pairs</b>\n\n"
@@ -150,6 +178,56 @@ def show_channels(call):
     if pairs:
         markup.add(types.InlineKeyboardButton("🔄 Toggle Pair", callback_data="toggle_channel_pair"))
     markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("channels_worker_"))
+def show_worker_channels(call):
+    """Show channel pairs for a specific worker."""
+    worker_id = call.data.replace("channels_worker_", "")
+    
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+    
+    if not worker_cfg:
+        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+        return
+    
+    # Store selected worker in temp storage
+    temp_storage[call.message.chat.id] = {"selected_worker_id": worker_id}
+    
+    pairs = worker_cfg.get("channel_pairs", [])
+    
+    text = f"📡 <b>Channel Pairs - {worker_id}</b>\n\n"
+    
+    if pairs:
+        for i, pair in enumerate(pairs):
+            status = "✅" if pair.get("enabled", True) else "❌"
+            text += f"{status} <b>Pair {i+1}</b>\n"
+            text += f"  Source: <code>{pair['source']}</code>\n"
+            text += f"  Target: <code>{pair['target']}</code>\n"
+            text += f"  Backfill: {pair.get('backfill_count', 0)}\n\n"
+    else:
+        text += "No channel pairs configured yet.\n\n"
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("➕ Add Pair", callback_data="add_channel_pair"),
+        types.InlineKeyboardButton("🗑️ Remove Pair", callback_data="remove_channel_pair")
+    )
+    if pairs:
+        markup.add(types.InlineKeyboardButton("🔄 Toggle Pair", callback_data="toggle_channel_pair"))
+    markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="menu_channels"))
     
     bot.edit_message_text(
         text,
@@ -195,7 +273,6 @@ def process_add_channel_pair(message):
         backfill = int(parts[2]) if len(parts) > 2 else 10
         
         # Auto-fix: Ensure channel IDs have -100 prefix for supergroups/channels
-        # If ID is positive or doesn't start with -100, add the prefix
         if source > 0:
             source = int(f"-100{source}")
         elif source < 0 and not str(source).startswith("-100"):
@@ -206,19 +283,58 @@ def process_add_channel_pair(message):
         elif target < 0 and not str(target).startswith("-100"):
             target = int(f"-100{abs(target)}")
         
-        config_manager.add_channel_pair(source, target, backfill)
+        # Check if multi-worker mode
+        config_manager.load()
+        config = config_manager.config
+        workers_config = config.get("workers", [])
         
-        # Create trigger file to notify main bot about new pair
+        if workers_config:
+            # Multi-worker mode: add to selected worker
+            selected_worker_id = temp_storage.get(message.chat.id, {}).get("selected_worker_id")
+            
+            if not selected_worker_id:
+                bot.reply_to(message, "❌ Error: No worker selected. Please try again from the menu.")
+                return
+            
+            # Find worker and add pair
+            worker_found = False
+            for worker in workers_config:
+                if worker["worker_id"] == selected_worker_id:
+                    if "channel_pairs" not in worker:
+                        worker["channel_pairs"] = []
+                    worker["channel_pairs"].append({
+                        "source": source,
+                        "target": target,
+                        "enabled": True,
+                        "backfill_count": backfill
+                    })
+                    worker_found = True
+                    break
+            
+            if not worker_found:
+                bot.reply_to(message, f"❌ Worker '{selected_worker_id}' not found.")
+                return
+            
+            config_manager.config = config
+            config_manager.save()
+            
+            worker_msg = f" to <b>{selected_worker_id}</b>"
+        else:
+            # Single-worker mode: use old method
+            config_manager.add_channel_pair(source, target, backfill)
+            worker_msg = ""
+        
+        # Create trigger file
         trigger_file = Path("trigger_backfill.flag")
         try:
             trigger_file.touch()
-            auto_backfill_msg = "🔔 <b>Auto-backfill triggered!</b> The main bot will automatically backfill this pair within 5-10 seconds (no restart needed)."
+            auto_backfill_msg = "🔔 <b>Auto-backfill triggered!</b> The main bot will automatically backfill this pair within 5-10 seconds."
         except Exception as e:
-            auto_backfill_msg = f"⚠️ Could not create trigger file: {e}\nPlease restart the main bot manually: <code>./start.sh</code>"
+            auto_backfill_msg = f"⚠️ Could not create trigger file. Please restart: <code>./start.sh</code>"
         
         bot.reply_to(
             message,
-            f"✅ <b>Channel pair added!</b>\n\n"
+            f"✅ <b>Channel pair added{worker_msg}!</b>\n\n"
             f"Source: <code>{source}</code>\n"
             f"Target: <code>{target}</code>\n"
             f"Backfill: {backfill}\n\n"
@@ -309,12 +425,40 @@ def process_toggle_channel_pair(message):
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_rules")
 def show_rules(call):
-    """Show replacement rules."""
+    """Show replacement rules - check if multi-worker mode first."""
     # Clear any temporary storage when navigating to menu
     if call.message.chat.id in temp_storage:
         temp_storage.pop(call.message.chat.id)
     
     config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    # Multi-worker mode: ask which worker
+    if workers_config:
+        text = "🔄 <b>Replacement Rules</b>\n\n"
+        text += "Select a worker to manage its replacement rules:\n\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        
+        for worker_cfg in workers_config:
+            worker_id = worker_cfg["worker_id"]
+            rules_count = len(worker_cfg.get("replacement_rules", []))
+            button_text = f"👷 {worker_id} ({rules_count} rules)"
+            markup.add(types.InlineKeyboardButton(button_text, callback_data=f"rules_worker_{worker_id}"))
+        
+        markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        return
+    
+    # Single-worker mode
     rules = config_manager.get_replacement_rules()
     
     text = "🔄 <b>Replacement Rules</b>\n\n"
@@ -335,6 +479,54 @@ def show_rules(call):
         types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
     )
     markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("rules_worker_"))
+def show_worker_rules(call):
+    """Show replacement rules for a specific worker."""
+    worker_id = call.data.replace("rules_worker_", "")
+    
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+    
+    if not worker_cfg:
+        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+        return
+    
+    # Store selected worker in temp storage
+    temp_storage[call.message.chat.id] = {"selected_worker_id": worker_id}
+    
+    rules = worker_cfg.get("replacement_rules", [])
+    
+    text = f"🔄 <b>Replacement Rules - {worker_id}</b>\n\n"
+    
+    if rules:
+        for i, rule in enumerate(rules):
+            case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
+            regex = " | 🔣 Regex" if rule.get("is_regex") else ""
+            text += f"<b>Rule {i+1}</b> ({case}{regex})\n"
+            text += f"  Find: <code>{rule['find']}</code>\n"
+            text += f"  Replace: <code>{rule['replace']}</code>\n\n"
+    else:
+        text += "No replacement rules configured.\n\n"
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
+        types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
+    )
+    markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="menu_rules"))
     
     bot.edit_message_text(
         text,
