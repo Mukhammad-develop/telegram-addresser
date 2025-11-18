@@ -263,8 +263,14 @@ class TelegramForwarder:
         Args:
             event: Telethon NewMessage event
         """
+        # Track timing for delay analysis
+        import time as time_module
+        start_time = time_module.time()
+        
         message = event.message
         source_chat_id = event.chat_id
+        
+        self.logger.info(f"⏱️ [TIMING] Message {message.id} received at {start_time}")
         
         # Check if this message is part of a media group we've already processed
         if message.grouped_id:
@@ -304,7 +310,11 @@ class TelegramForwarder:
         
         # Forward to all target channels
         for target in targets:
+            forward_start = time_module.time()
             await self.forward_message_with_retry(message, source_chat_id, target)
+            forward_end = time_module.time()
+            forward_duration = forward_end - start_time
+            self.logger.info(f"⏱️ [TIMING] Message {message.id} forwarded in {forward_duration:.2f}s (processing time: {forward_end - forward_start:.2f}s)")
     
     async def forward_message_with_retry(
         self, 
