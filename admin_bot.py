@@ -4,7 +4,10 @@ from telebot import types
 import json
 import os
 import time
+import asyncio
 from pathlib import Path
+from telethon import TelegramClient
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, FloodWaitError
 from src.config_manager import ConfigManager
 from worker_manager import WorkerManager, WorkerProcess
 
@@ -1793,8 +1796,10 @@ def process_edit_api_hash(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("worker_auth_"))
 def authenticate_worker(call):
-    """Show authentication instructions for a worker."""
+    """Start interactive authentication for a worker."""
     worker_id = call.data.replace("worker_auth_", "")
+    
+    bot.clear_step_handler_by_chat_id(call.message.chat.id)
     
     config_manager.load()
     config = config_manager.config
@@ -1813,51 +1818,291 @@ def authenticate_worker(call):
     session_file = Path(f"{session_name}.session")
     is_authenticated = session_file.exists()
     
+    # Store worker info in temp storage
+    temp_storage[call.message.chat.id] = {
+        "auth_worker_id": worker_id,
+        "auth_api_id": worker_cfg.get("api_id"),
+        "auth_api_hash": worker_cfg.get("api_hash"),
+        "auth_session_name": session_name
+    }
+    
     text = f"🔐 <b>Authenticate Worker: {worker_id}</b>\n\n"
     
     if is_authenticated:
         text += "⚠️ This worker is already authenticated.\n"
         text += "Re-authenticating will replace the existing session.\n\n"
-    else:
-        text += "⚠️ This worker needs to be authenticated before it can start.\n\n"
     
     text += f"<b>Worker Details:</b>\n"
     text += f"• Worker ID: <code>{worker_id}</code>\n"
     text += f"• API ID: <code>{api_id}</code>\n"
     text += f"• Session: <code>{session_name}</code>\n\n"
     
-    text += "📋 <b>How to Authenticate:</b>\n\n"
-    text += "<b>Option 1 - Simple (Recommended):</b>\n"
-    text += "Copy and run this command in your terminal:\n\n"
-    text += f"<code>python3 auth_worker.py {worker_id}</code>\n\n"
-    text += "Then follow the prompts:\n"
-    text += "1️⃣ Enter phone number (with country code)\n"
-    text += "2️⃣ Enter verification code from Telegram\n"
-    text += "3️⃣ Enter 2FA password (if enabled)\n"
-    text += "4️⃣ Done! Session file created\n\n"
+    text += "📱 <b>Step 1/3: Enter Phone Number</b>\n\n"
+    text += "Please send your phone number with country code.\n\n"
+    text += "<b>Examples:</b>\n"
+    text += "• <code>+1234567890</code>\n"
+    text += "• <code>+998901234567</code>\n\n"
+    text += "Send /cancel to abort"
     
-    text += "<b>Option 2 - Manual:</b>\n"
-    text += "1. Stop the worker if it's running\n"
-    text += "2. SSH to your server\n"
-    text += "3. Run the command above\n"
-    text += "4. Restart workers: <code>./start.sh</code>\n\n"
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data=f"worker_view_{worker_id}"))
     
-    text += "💡 <b>Tip:</b> After authentication, come back here and click 🚀 Start!"
-    
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("✅ Check Auth Status", callback_data=f"worker_check_auth_{worker_id}"),
-        types.InlineKeyboardButton("🗑️ Delete Session", callback_data=f"worker_delete_session_{worker_id}"),
-        types.InlineKeyboardButton("🔙 Back", callback_data=f"worker_view_{worker_id}")
-    )
-    
-    bot.edit_message_text(
+    msg = bot.edit_message_text(
         text,
         call.message.chat.id,
         call.message.message_id,
         parse_mode='HTML',
         reply_markup=markup
     )
+    
+    bot.register_next_step_handler(msg, process_auth_phone)
+
+
+def process_auth_phone(message):
+    """Process phone number and request verification code."""
+    if message.text == "/cancel":
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Authentication cancelled")
+        return
+    
+    phone = message.text.strip()
+    data = temp_storage.get(message.chat.id, {})
+    
+    if not data:
+        bot.send_message(message.chat.id, "❌ Session expired. Please try again.")
+        return
+    
+    worker_id = data["auth_worker_id"]
+    api_id = data["auth_api_id"]
+    api_hash = data["auth_api_hash"]
+    session_name = data["auth_session_name"]
+    
+    # Store phone
+    temp_storage[message.chat.id]["auth_phone"] = phone
+    
+    bot.send_message(message.chat.id, f"⏳ Connecting to Telegram as <code>{phone}</code>...", parse_mode='HTML')
+    
+    # Run async authentication
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        client = TelegramClient(session_name, api_id, api_hash)
+        
+        async def send_code():
+            await client.connect()
+            result = await client.send_code_request(phone)
+            await client.disconnect()
+            return result.phone_code_hash
+        
+        phone_code_hash = loop.run_until_complete(send_code())
+        loop.close()
+        
+        # Store for next step
+        temp_storage[message.chat.id]["auth_phone_code_hash"] = phone_code_hash
+        temp_storage[message.chat.id]["auth_client_created"] = True
+        
+        text = f"✅ <b>Code sent to {phone}!</b>\n\n"
+        text += "📱 <b>Step 2/3: Enter Verification Code</b>\n\n"
+        text += "Please check your Telegram app and send the verification code here.\n\n"
+        text += "<b>Example:</b> <code>12345</code>\n\n"
+        text += "Send /cancel to abort"
+        
+        bot.send_message(message.chat.id, text, parse_mode='HTML')
+        bot.register_next_step_handler(message, process_auth_code)
+        
+    except FloodWaitError as e:
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(
+            message.chat.id,
+            f"❌ <b>Rate Limited!</b>\n\n"
+            f"Please wait {e.seconds} seconds before trying again.",
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(
+            message.chat.id,
+            f"❌ <b>Error:</b> {str(e)}\n\n"
+            f"Please check the phone number and try again.",
+            parse_mode='HTML'
+        )
+
+
+def process_auth_code(message):
+    """Process verification code."""
+    if message.text == "/cancel":
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Authentication cancelled")
+        return
+    
+    code = message.text.strip()
+    data = temp_storage.get(message.chat.id, {})
+    
+    if not data:
+        bot.send_message(message.chat.id, "❌ Session expired. Please try again.")
+        return
+    
+    worker_id = data["auth_worker_id"]
+    api_id = data["auth_api_id"]
+    api_hash = data["auth_api_hash"]
+    session_name = data["auth_session_name"]
+    phone = data["auth_phone"]
+    phone_code_hash = data["auth_phone_code_hash"]
+    
+    bot.send_message(message.chat.id, "⏳ Verifying code...")
+    
+    # Run async sign in
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        client = TelegramClient(session_name, api_id, api_hash)
+        
+        async def sign_in():
+            await client.connect()
+            try:
+                result = await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
+                me = await client.get_me()
+                await client.disconnect()
+                return True, me, None
+            except SessionPasswordNeededError:
+                await client.disconnect()
+                return False, None, "2FA required"
+            except PhoneCodeInvalidError:
+                await client.disconnect()
+                return False, None, "Invalid code"
+            except Exception as e:
+                await client.disconnect()
+                return False, None, str(e)
+        
+        success, me, error = loop.run_until_complete(sign_in())
+        loop.close()
+        
+        if success:
+            # Authentication complete!
+            temp_storage.pop(message.chat.id, None)
+            
+            text = f"✅ <b>Authentication Successful!</b>\n\n"
+            text += f"👤 <b>Logged in as:</b> {me.first_name}"
+            if me.last_name:
+                text += f" {me.last_name}"
+            text += "\n"
+            if me.username:
+                text += f"🔗 <b>Username:</b> @{me.username}\n"
+            text += f"📞 <b>Phone:</b> {me.phone}\n\n"
+            text += f"📁 <b>Session file created:</b> <code>{session_name}.session</code>\n\n"
+            text += f"🎉 Worker '<b>{worker_id}</b>' is now authenticated!\n\n"
+            text += "💡 You can now start this worker from the Workers menu."
+            
+            bot.send_message(message.chat.id, text, parse_mode='HTML', reply_markup=main_menu_keyboard())
+            
+        elif error == "2FA required":
+            # Need 2FA password
+            text = f"🔐 <b>Step 3/3: Enter 2FA Password</b>\n\n"
+            text += "This account has Two-Factor Authentication enabled.\n\n"
+            text += "Please send your 2FA password.\n\n"
+            text += "Send /cancel to abort"
+            
+            bot.send_message(message.chat.id, text, parse_mode='HTML')
+            bot.register_next_step_handler(message, process_auth_2fa)
+            
+        else:
+            temp_storage.pop(message.chat.id, None)
+            bot.send_message(
+                message.chat.id,
+                f"❌ <b>Error:</b> {error}\n\n"
+                f"Please try again.",
+                parse_mode='HTML'
+            )
+            
+    except Exception as e:
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(
+            message.chat.id,
+            f"❌ <b>Error:</b> {str(e)}\n\n"
+            f"Please try again.",
+            parse_mode='HTML'
+        )
+
+
+def process_auth_2fa(message):
+    """Process 2FA password."""
+    if message.text == "/cancel":
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Authentication cancelled")
+        return
+    
+    password = message.text.strip()
+    data = temp_storage.get(message.chat.id, {})
+    
+    if not data:
+        bot.send_message(message.chat.id, "❌ Session expired. Please try again.")
+        return
+    
+    worker_id = data["auth_worker_id"]
+    api_id = data["auth_api_id"]
+    api_hash = data["auth_api_hash"]
+    session_name = data["auth_session_name"]
+    
+    bot.send_message(message.chat.id, "⏳ Verifying 2FA password...")
+    
+    # Run async 2FA check
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        client = TelegramClient(session_name, api_id, api_hash)
+        
+        async def check_password():
+            await client.connect()
+            try:
+                await client.sign_in(password=password)
+                me = await client.get_me()
+                await client.disconnect()
+                return True, me, None
+            except Exception as e:
+                await client.disconnect()
+                return False, None, str(e)
+        
+        success, me, error = loop.run_until_complete(check_password())
+        loop.close()
+        
+        if success:
+            # Authentication complete!
+            temp_storage.pop(message.chat.id, None)
+            
+            text = f"✅ <b>Authentication Successful!</b>\n\n"
+            text += f"👤 <b>Logged in as:</b> {me.first_name}"
+            if me.last_name:
+                text += f" {me.last_name}"
+            text += "\n"
+            if me.username:
+                text += f"🔗 <b>Username:</b> @{me.username}\n"
+            text += f"📞 <b>Phone:</b> {me.phone}\n\n"
+            text += f"📁 <b>Session file created:</b> <code>{session_name}.session</code>\n\n"
+            text += f"🎉 Worker '<b>{worker_id}</b>' is now authenticated!\n\n"
+            text += "💡 You can now start this worker from the Workers menu."
+            
+            bot.send_message(message.chat.id, text, parse_mode='HTML', reply_markup=main_menu_keyboard())
+            
+        else:
+            temp_storage.pop(message.chat.id, None)
+            bot.send_message(
+                message.chat.id,
+                f"❌ <b>2FA Error:</b> {error}\n\n"
+                f"Password might be incorrect. Please try again.",
+                parse_mode='HTML'
+            )
+            
+    except Exception as e:
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(
+            message.chat.id,
+            f"❌ <b>Error:</b> {str(e)}\n\n"
+            f"Please try again.",
+            parse_mode='HTML'
+        )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("worker_check_auth_"))
