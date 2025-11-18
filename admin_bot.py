@@ -355,13 +355,40 @@ def process_add_channel_pair(message):
 def remove_channel_pair_start(call):
     """Start removing channel pair."""
     config_manager.load()
-    pairs = config_manager.get_all_channel_pairs()
+    config = config_manager.config
+    
+    # Check if multi-worker mode
+    is_multiworker = "workers" in config and isinstance(config.get("workers"), list)
+    
+    if is_multiworker:
+        # Get selected worker from temp storage
+        data = temp_storage.get(call.message.chat.id, {})
+        worker_id = data.get("selected_worker_id")
+        
+        if not worker_id:
+            bot.answer_callback_query(call.id, "⚠️ No worker selected", show_alert=True)
+            return
+        
+        # Get worker's channel pairs
+        workers_config = config.get("workers", [])
+        worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+        
+        if not worker_cfg:
+            bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+            return
+        
+        pairs = worker_cfg.get("channel_pairs", [])
+        worker_msg = f" for {worker_id}"
+    else:
+        # Single-worker mode
+        pairs = config_manager.get_all_channel_pairs()
+        worker_msg = ""
     
     if not pairs:
         bot.answer_callback_query(call.id, "No pairs to remove!")
         return
     
-    text = "🗑️ <b>Remove Channel Pair</b>\n\n"
+    text = f"🗑️ <b>Remove Channel Pair{worker_msg}</b>\n\n"
     text += "Send the pair number to remove:\n\n"
     
     for i, pair in enumerate(pairs):
@@ -375,10 +402,51 @@ def process_remove_channel_pair(message):
     """Process channel pair removal."""
     try:
         index = int(message.text.strip()) - 1
-        config_manager.remove_channel_pair(index)
+        
+        config_manager.load()
+        config = config_manager.config
+        
+        # Check if multi-worker mode
+        is_multiworker = "workers" in config and isinstance(config.get("workers"), list)
+        
+        if is_multiworker:
+            # Get selected worker from temp storage
+            data = temp_storage.get(message.chat.id, {})
+            worker_id = data.get("selected_worker_id")
+            
+            if not worker_id:
+                bot.reply_to(message, "❌ Session expired. Please try again.")
+                return
+            
+            # Get worker's channel pairs
+            workers_config = config.get("workers", [])
+            worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+            
+            if not worker_cfg:
+                bot.reply_to(message, "❌ Worker not found")
+                return
+            
+            pairs = worker_cfg.get("channel_pairs", [])
+            
+            if index < 0 or index >= len(pairs):
+                bot.reply_to(message, "❌ Invalid pair number")
+                return
+            
+            # Remove the pair
+            removed_pair = pairs.pop(index)
+            worker_cfg["channel_pairs"] = pairs
+            config_manager.config = config
+            config_manager.save()
+            
+            worker_msg = f" from {worker_id}"
+        else:
+            # Single-worker mode
+            config_manager.remove_channel_pair(index)
+            worker_msg = ""
+        
         bot.reply_to(
             message,
-            "✅ Channel pair removed! Restart the forwarder bot to apply changes.",
+            f"✅ Channel pair removed{worker_msg}! Restart the forwarder bot to apply changes.",
             reply_markup=main_menu_keyboard()
         )
     except ValueError:
@@ -391,9 +459,36 @@ def process_remove_channel_pair(message):
 def toggle_channel_pair_start(call):
     """Start toggling channel pair."""
     config_manager.load()
-    pairs = config_manager.get_all_channel_pairs()
+    config = config_manager.config
     
-    text = "🔄 <b>Toggle Channel Pair</b>\n\n"
+    # Check if multi-worker mode
+    is_multiworker = "workers" in config and isinstance(config.get("workers"), list)
+    
+    if is_multiworker:
+        # Get selected worker from temp storage
+        data = temp_storage.get(call.message.chat.id, {})
+        worker_id = data.get("selected_worker_id")
+        
+        if not worker_id:
+            bot.answer_callback_query(call.id, "⚠️ No worker selected", show_alert=True)
+            return
+        
+        # Get worker's channel pairs
+        workers_config = config.get("workers", [])
+        worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+        
+        if not worker_cfg:
+            bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+            return
+        
+        pairs = worker_cfg.get("channel_pairs", [])
+        worker_msg = f" for {worker_id}"
+    else:
+        # Single-worker mode
+        pairs = config_manager.get_all_channel_pairs()
+        worker_msg = ""
+    
+    text = f"🔄 <b>Toggle Channel Pair{worker_msg}</b>\n\n"
     text += "Send the pair number to toggle:\n\n"
     
     for i, pair in enumerate(pairs):
@@ -408,14 +503,55 @@ def process_toggle_channel_pair(message):
     """Process channel pair toggle."""
     try:
         index = int(message.text.strip()) - 1
-        pairs = config_manager.get_all_channel_pairs()
-        current = pairs[index].get("enabled", True)
-        config_manager.update_channel_pair(index, enabled=not current)
+        
+        config_manager.load()
+        config = config_manager.config
+        
+        # Check if multi-worker mode
+        is_multiworker = "workers" in config and isinstance(config.get("workers"), list)
+        
+        if is_multiworker:
+            # Get selected worker from temp storage
+            data = temp_storage.get(message.chat.id, {})
+            worker_id = data.get("selected_worker_id")
+            
+            if not worker_id:
+                bot.reply_to(message, "❌ Session expired. Please try again.")
+                return
+            
+            # Get worker's channel pairs
+            workers_config = config.get("workers", [])
+            worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+            
+            if not worker_cfg:
+                bot.reply_to(message, "❌ Worker not found")
+                return
+            
+            pairs = worker_cfg.get("channel_pairs", [])
+            
+            if index < 0 or index >= len(pairs):
+                bot.reply_to(message, "❌ Invalid pair number")
+                return
+            
+            # Toggle the pair
+            current = pairs[index].get("enabled", True)
+            pairs[index]["enabled"] = not current
+            worker_cfg["channel_pairs"] = pairs
+            config_manager.config = config
+            config_manager.save()
+            
+            worker_msg = f" in {worker_id}"
+        else:
+            # Single-worker mode
+            pairs = config_manager.get_all_channel_pairs()
+            current = pairs[index].get("enabled", True)
+            config_manager.update_channel_pair(index, enabled=not current)
+            worker_msg = ""
         
         status = "disabled" if current else "enabled"
         bot.reply_to(
             message,
-            f"✅ Channel pair {status}! Restart the forwarder bot to apply changes.",
+            f"✅ Channel pair {status}{worker_msg}! Restart the forwarder bot to apply changes.",
             reply_markup=main_menu_keyboard()
         )
     except (ValueError, IndexError):
