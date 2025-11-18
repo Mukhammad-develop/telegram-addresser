@@ -866,10 +866,67 @@ class TelegramForwarder:
 
 async def main():
     """Main entry point."""
-    bot = TelegramForwarder()
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Telegram Forwarder Bot')
+    parser.add_argument('--config', type=str, default='config.json',
+                       help='Path to configuration file')
+    parser.add_argument('--auth-only', action='store_true',
+                       help='Only perform authentication, then exit')
+    args = parser.parse_args()
+    
+    # Check if config is multi-worker format
+    try:
+        with open(args.config, 'r') as f:
+            config_data = json.load(f)
+        
+        if "workers" in config_data and isinstance(config_data.get("workers"), list):
+            # Multi-worker config detected
+            print("\n" + "="*60)
+            print("⚠️  MULTI-WORKER CONFIG DETECTED")
+            print("="*60)
+            print("\n❌ You're trying to run bot.py directly with a multi-worker config.")
+            print("\n📝 To use multi-worker mode:\n")
+            print("   ./start.sh")
+            print("\n📝 To authenticate a specific worker:\n")
+            print("   1. Find the worker's session name in config.json")
+            print(f"   2. Create a temporary single-worker config")
+            print("   3. Or use the admin bot to manage workers")
+            print("\n💡 Your workers:")
+            for worker in config_data.get("workers", []):
+                worker_id = worker.get("worker_id", "unknown")
+                session = worker.get("session_name", "unknown")
+                api_id = worker.get("api_id", "N/A")
+                print(f"   • {worker_id}: session={session}, api_id={api_id}")
+            print("\n📚 See docs/V0.6_FEATURES.md for more info")
+            print("="*60 + "\n")
+            return
+    except FileNotFoundError:
+        print(f"❌ Config file not found: {args.config}")
+        return
+    except json.JSONDecodeError:
+        print(f"❌ Invalid JSON in config file: {args.config}")
+        return
+    
+    # Single-worker mode - proceed normally
+    try:
+        bot = TelegramForwarder(args.config)
+    except ValueError as e:
+        print(f"\n❌ Configuration Error: {e}\n")
+        return
     
     try:
-        await bot.start()
+        if args.auth_only:
+            print("\n🔐 Authentication Mode")
+            print("This will only authenticate and create the session file.\n")
+            await bot.client.start()
+            print(f"\n✅ Authentication successful!")
+            print(f"📁 Session file created: {bot.session_name}.session")
+            print(f"🎉 You can now start the bot normally.\n")
+            await bot.client.disconnect()
+        else:
+            await bot.start()
     except KeyboardInterrupt:
         print("\n\nReceived interrupt signal. Shutting down gracefully...")
     except Exception as e:
@@ -877,7 +934,8 @@ async def main():
         logger.critical(f"Fatal error: {type(e).__name__}: {e}", exc_info=True)
         raise
     finally:
-        await bot.stop()
+        if not args.auth_only:
+            await bot.stop()
 
 
 if __name__ == "__main__":
