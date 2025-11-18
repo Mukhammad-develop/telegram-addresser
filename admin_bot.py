@@ -3,8 +3,10 @@ import telebot
 from telebot import types
 import json
 import os
+import time
 from pathlib import Path
 from src.config_manager import ConfigManager
+from worker_manager import WorkerManager, WorkerProcess
 
 # Load configuration
 config_manager = ConfigManager()
@@ -37,6 +39,17 @@ bot = telebot.TeleBot(ADMIN_BOT_TOKEN)
 # Temporary storage for multi-step operations (chat_id -> data)
 temp_storage = {}
 
+# Global worker manager instance (created on demand)
+worker_manager_instance = None
+
+def get_worker_manager():
+    """Get or create worker manager instance."""
+    global worker_manager_instance
+    if worker_manager_instance is None:
+        worker_manager_instance = WorkerManager()
+        worker_manager_instance.load_workers_from_config()
+    return worker_manager_instance
+
 if not ADMIN_USER_IDS:
     print("\n⚠️  WARNING: No admin users configured!")
     print("Please add your Telegram user ID to config.json:")
@@ -57,6 +70,7 @@ def main_menu_keyboard():
         types.InlineKeyboardButton("🔄 Replacement Rules", callback_data="menu_rules"),
         types.InlineKeyboardButton("🔍 Filters", callback_data="menu_filters"),
         types.InlineKeyboardButton("⚙️ Settings", callback_data="menu_settings"),
+        types.InlineKeyboardButton("👷 Workers", callback_data="menu_workers"),
         types.InlineKeyboardButton("📊 Status", callback_data="menu_status"),
         types.InlineKeyboardButton("🔄 Reload Config", callback_data="reload_config")
     )
@@ -748,6 +762,546 @@ def show_settings(call):
         parse_mode='HTML',
         reply_markup=markup
     )
+
+
+# ========== WORKERS ==========
+
+@bot.callback_query_handler(func=lambda call: call.data == "menu_workers")
+def show_workers(call):
+    """Show workers management menu."""
+    config_manager.load()
+    config = config_manager.config
+    
+    # Check if multi-worker mode is configured
+    workers_config = config.get("workers", [])
+    
+    if not workers_config:
+        text = "👷 <b>Workers</b>\n\n"
+        text += "⚠️ Multi-worker mode is not configured.\n\n"
+        text += "Your bot is running in <b>single-worker mode</b>.\n\n"
+        text += "To enable multi-worker mode:\n"
+        text += "1. Edit config.json\n"
+        text += "2. Add 'workers' array (see config.example.json)\n"
+        text += "3. Restart the bot\n\n"
+        text += "Single-worker mode is simpler and works great for most users!"
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        return
+    
+    # Multi-worker mode - show worker status
+    try:
+        manager = get_worker_manager()
+        status = manager.get_status()
+        
+        text = "👷 <b>Workers Management</b>\n\n"
+        text += f"<b>Total Workers:</b> {len(workers_config)}\n"
+        text += f"<b>Running:</b> {sum(1 for s in status.values() if s['alive'])}\n\n"
+        
+        for worker_cfg in workers_config:
+            worker_id = worker_cfg["worker_id"]
+            enabled = worker_cfg.get("enabled", True)
+            
+            if worker_id in status:
+                s = status[worker_id]
+                uptime_mins = int(s['uptime'] / 60)
+                
+                text += f"<b>🔹 {worker_id}</b>\n"
+                text += f"   Status: {'✅ Running' if s['alive'] else '❌ Stopped'}\n"
+                if s['alive']:
+                    text += f"   PID: {s['pid']}\n"
+                    text += f"   Uptime: {uptime_mins} min\n"
+                    text += f"   Restarts: {s['restart_count']}\n"
+                text += f"   Channels: {len(worker_cfg.get('channel_pairs', []))}\n"
+            else:
+                text += f"<b>🔹 {worker_id}</b>\n"
+                text += f"   Status: {'⏸️ Disabled' if not enabled else '❌ Not Started'}\n"
+                text += f"   Channels: {len(worker_cfg.get('channel_pairs', []))}\n"
+            text += "\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🚀 Start All", callback_data="workers_start_all"),
+            types.InlineKeyboardButton("🛑 Stop All", callback_data="workers_stop_all"),
+            types.InlineKeyboardButton("🔄 Restart All", callback_data="workers_restart_all"),
+            types.InlineKeyboardButton("➕ Add Worker", callback_data="workers_add"),
+            types.InlineKeyboardButton("🔍 Worker Details", callback_data="workers_details"),
+            types.InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+        )
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "workers_start_all")
+def start_all_workers(call):
+    """Start all configured workers."""
+    try:
+        manager = get_worker_manager()
+        manager.start_all_workers()
+        
+        bot.answer_callback_query(call.id, "✅ All workers started!", show_alert=True)
+        # Refresh the workers menu
+        show_workers(call)
+        
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "workers_stop_all")
+def stop_all_workers(call):
+    """Stop all running workers."""
+    try:
+        manager = get_worker_manager()
+        manager.stop_all_workers()
+        
+        bot.answer_callback_query(call.id, "✅ All workers stopped!", show_alert=True)
+        # Refresh the workers menu
+        show_workers(call)
+        
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "workers_restart_all")
+def restart_all_workers(call):
+    """Restart all workers."""
+    try:
+        manager = get_worker_manager()
+        manager.stop_all_workers()
+        time.sleep(2)
+        manager.start_all_workers()
+        
+        bot.answer_callback_query(call.id, "✅ All workers restarted!", show_alert=True)
+        # Refresh the workers menu
+        show_workers(call)
+        
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "workers_details")
+def show_worker_details(call):
+    """Show individual worker controls."""
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    if not workers_config:
+        bot.answer_callback_query(call.id, "⚠️ No workers configured", show_alert=True)
+        return
+    
+    text = "🔍 <b>Worker Details</b>\n\n"
+    text += "Select a worker to manage:\n\n"
+    
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    for worker_cfg in workers_config:
+        worker_id = worker_cfg["worker_id"]
+        channels_count = len(worker_cfg.get("channel_pairs", []))
+        button_text = f"🔹 {worker_id} ({channels_count} channels)"
+        markup.add(types.InlineKeyboardButton(button_text, callback_data=f"worker_view_{worker_id}"))
+    
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="menu_workers"))
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_view_"))
+def view_worker_detail(call):
+    """View details of a specific worker."""
+    worker_id = call.data.replace("worker_view_", "")
+    
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+    
+    if not worker_cfg:
+        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+        return
+    
+    try:
+        manager = get_worker_manager()
+        status = manager.get_status()
+        
+        text = f"👷 <b>Worker: {worker_id}</b>\n\n"
+        
+        if worker_id in status:
+            s = status[worker_id]
+            uptime_mins = int(s['uptime'] / 60)
+            uptime_hours = uptime_mins // 60
+            uptime_mins_remainder = uptime_mins % 60
+            
+            text += f"<b>Status:</b> {'✅ Running' if s['alive'] else '❌ Stopped'}\n"
+            if s['alive']:
+                text += f"<b>PID:</b> {s['pid']}\n"
+                if uptime_hours > 0:
+                    text += f"<b>Uptime:</b> {uptime_hours}h {uptime_mins_remainder}m\n"
+                else:
+                    text += f"<b>Uptime:</b> {uptime_mins}m\n"
+                text += f"<b>Restarts:</b> {s['restart_count']}\n"
+        else:
+            text += f"<b>Status:</b> ❌ Not Started\n"
+        
+        text += f"\n<b>Configuration:</b>\n"
+        text += f"• API ID: {worker_cfg.get('api_id', 'N/A')}\n"
+        text += f"• Session: {worker_cfg.get('session_name', 'N/A')}\n"
+        text += f"• Channel Pairs: {len(worker_cfg.get('channel_pairs', []))}\n"
+        text += f"• Replacement Rules: {len(worker_cfg.get('replacement_rules', []))}\n"
+        text += f"• Enabled: {'✅ Yes' if worker_cfg.get('enabled', True) else '❌ No'}\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🚀 Start", callback_data=f"worker_start_{worker_id}"),
+            types.InlineKeyboardButton("🛑 Stop", callback_data=f"worker_stop_{worker_id}"),
+            types.InlineKeyboardButton("🔄 Restart", callback_data=f"worker_restart_{worker_id}"),
+            types.InlineKeyboardButton("❌ Remove", callback_data=f"worker_remove_{worker_id}"),
+            types.InlineKeyboardButton("🔙 Back", callback_data="workers_details")
+        )
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_start_"))
+def start_worker(call):
+    """Start a specific worker."""
+    worker_id = call.data.replace("worker_start_", "")
+    
+    try:
+        manager = get_worker_manager()
+        if worker_id in manager.workers:
+            worker = manager.workers[worker_id]
+            if not worker.is_alive():
+                worker.start()
+                bot.answer_callback_query(call.id, f"✅ Worker {worker_id} started!", show_alert=True)
+            else:
+                bot.answer_callback_query(call.id, f"⚠️ Worker {worker_id} is already running", show_alert=True)
+        else:
+            bot.answer_callback_query(call.id, f"❌ Worker {worker_id} not found", show_alert=True)
+        
+        # Refresh view
+        view_worker_detail(call)
+        
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_stop_"))
+def stop_worker(call):
+    """Stop a specific worker."""
+    worker_id = call.data.replace("worker_stop_", "")
+    
+    try:
+        manager = get_worker_manager()
+        if worker_id in manager.workers:
+            worker = manager.workers[worker_id]
+            if worker.is_alive():
+                worker.stop()
+                bot.answer_callback_query(call.id, f"✅ Worker {worker_id} stopped!", show_alert=True)
+            else:
+                bot.answer_callback_query(call.id, f"⚠️ Worker {worker_id} is not running", show_alert=True)
+        else:
+            bot.answer_callback_query(call.id, f"❌ Worker {worker_id} not found", show_alert=True)
+        
+        # Refresh view
+        view_worker_detail(call)
+        
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_restart_"))
+def restart_worker(call):
+    """Restart a specific worker."""
+    worker_id = call.data.replace("worker_restart_", "")
+    
+    try:
+        manager = get_worker_manager()
+        if worker_id in manager.workers:
+            worker = manager.workers[worker_id]
+            worker.restart()
+            bot.answer_callback_query(call.id, f"✅ Worker {worker_id} restarted!", show_alert=True)
+        else:
+            bot.answer_callback_query(call.id, f"❌ Worker {worker_id} not found", show_alert=True)
+        
+        # Refresh view
+        view_worker_detail(call)
+        
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_remove_"))
+def remove_worker(call):
+    """Remove a worker from configuration."""
+    worker_id = call.data.replace("worker_remove_", "")
+    
+    # Confirmation step
+    text = f"⚠️ <b>Remove Worker?</b>\n\n"
+    text += f"Are you sure you want to remove worker <b>{worker_id}</b>?\n\n"
+    text += "This will:\n"
+    text += "• Stop the worker if running\n"
+    text += "• Remove it from config.json\n"
+    text += "• This action cannot be undone!\n"
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ Yes, Remove", callback_data=f"worker_remove_confirm_{worker_id}"),
+        types.InlineKeyboardButton("❌ Cancel", callback_data=f"worker_view_{worker_id}")
+    )
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_remove_confirm_"))
+def confirm_remove_worker(call):
+    """Confirm and remove worker."""
+    worker_id = call.data.replace("worker_remove_confirm_", "")
+    
+    try:
+        # Stop worker if running
+        manager = get_worker_manager()
+        if worker_id in manager.workers:
+            worker = manager.workers[worker_id]
+            if worker.is_alive():
+                worker.stop()
+        
+        # Remove from config
+        config_manager.load()
+        config = config_manager.config
+        workers_config = config.get("workers", [])
+        
+        workers_config = [w for w in workers_config if w["worker_id"] != worker_id]
+        config["workers"] = workers_config
+        config_manager.config = config
+        config_manager.save()
+        
+        # Reload worker manager
+        global worker_manager_instance
+        worker_manager_instance = None
+        
+        bot.answer_callback_query(call.id, f"✅ Worker {worker_id} removed!", show_alert=True)
+        
+        # Go back to workers menu
+        show_workers(call)
+        
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "workers_add")
+def add_worker_start(call):
+    """Start the add worker process."""
+    bot.clear_step_handler_by_chat_id(call.message.chat.id)
+    
+    # Clear temp storage
+    if call.message.chat.id in temp_storage:
+        temp_storage.pop(call.message.chat.id)
+    
+    text = "➕ <b>Add New Worker</b>\n\n"
+    text += "Please enter a unique <b>worker ID</b>\n"
+    text += "Example: worker_2, backup_worker, etc.\n\n"
+    text += "Send /cancel to abort"
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="menu_workers"))
+    
+    msg = bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+    
+    bot.register_next_step_handler(msg, process_worker_id)
+
+
+def process_worker_id(message):
+    """Process worker ID input."""
+    if message.text == "/cancel":
+        bot.send_message(message.chat.id, "❌ Cancelled")
+        return
+    
+    worker_id = message.text.strip()
+    
+    # Validate worker ID
+    if not worker_id or " " in worker_id:
+        bot.send_message(message.chat.id, "❌ Invalid worker ID. Please use a single word without spaces.")
+        bot.register_next_step_handler(message, process_worker_id)
+        return
+    
+    # Check if worker ID already exists
+    config_manager.load()
+    workers_config = config_manager.config.get("workers", [])
+    if any(w["worker_id"] == worker_id for w in workers_config):
+        bot.send_message(message.chat.id, f"❌ Worker ID '{worker_id}' already exists. Please choose a different ID.")
+        bot.register_next_step_handler(message, process_worker_id)
+        return
+    
+    # Store worker ID
+    temp_storage[message.chat.id] = {"worker_id": worker_id}
+    
+    text = f"✅ Worker ID: <b>{worker_id}</b>\n\n"
+    text += "Now enter the <b>API ID</b> (number)\n"
+    text += "Get it from https://my.telegram.org\n\n"
+    text += "Send /cancel to abort"
+    
+    bot.send_message(message.chat.id, text, parse_mode='HTML')
+    bot.register_next_step_handler(message, process_api_id)
+
+
+def process_api_id(message):
+    """Process API ID input."""
+    if message.text == "/cancel":
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Cancelled")
+        return
+    
+    try:
+        api_id = int(message.text.strip())
+        temp_storage[message.chat.id]["api_id"] = api_id
+        
+        text = f"✅ API ID: <b>{api_id}</b>\n\n"
+        text += "Now enter the <b>API Hash</b> (string)\n"
+        text += "Get it from https://my.telegram.org\n\n"
+        text += "Send /cancel to abort"
+        
+        bot.send_message(message.chat.id, text, parse_mode='HTML')
+        bot.register_next_step_handler(message, process_api_hash)
+        
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ Invalid API ID. Please enter a number.")
+        bot.register_next_step_handler(message, process_api_id)
+
+
+def process_api_hash(message):
+    """Process API Hash input."""
+    if message.text == "/cancel":
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Cancelled")
+        return
+    
+    api_hash = message.text.strip()
+    temp_storage[message.chat.id]["api_hash"] = api_hash
+    
+    worker_id = temp_storage[message.chat.id]["worker_id"]
+    
+    text = f"✅ API Hash saved\n\n"
+    text += "Now enter the <b>session name</b>\n"
+    text += f"Example: {worker_id}_session\n\n"
+    text += "Send /cancel to abort"
+    
+    bot.send_message(message.chat.id, text, parse_mode='HTML')
+    bot.register_next_step_handler(message, process_session_name)
+
+
+def process_session_name(message):
+    """Process session name and complete worker addition."""
+    if message.text == "/cancel":
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Cancelled")
+        return
+    
+    session_name = message.text.strip()
+    
+    # Get all data from temp storage
+    data = temp_storage.pop(message.chat.id)
+    worker_id = data["worker_id"]
+    api_id = data["api_id"]
+    api_hash = data["api_hash"]
+    
+    # Create new worker config
+    new_worker = {
+        "worker_id": worker_id,
+        "api_id": api_id,
+        "api_hash": api_hash,
+        "session_name": session_name,
+        "enabled": True,
+        "channel_pairs": [],
+        "replacement_rules": [],
+        "filters": {
+            "enabled": False,
+            "mode": "whitelist",
+            "keywords": []
+        },
+        "settings": {
+            "retry_attempts": 5,
+            "retry_delay": 5,
+            "flood_wait_extra_delay": 10,
+            "max_message_length": 4096,
+            "log_level": "INFO",
+            "add_source_link": False,
+            "source_link_text": "\n\n🔗 Source: {link}"
+        }
+    }
+    
+    # Add to config
+    config_manager.load()
+    config = config_manager.config
+    
+    if "workers" not in config:
+        config["workers"] = []
+    
+    config["workers"].append(new_worker)
+    config_manager.config = config
+    config_manager.save()
+    
+    # Reload worker manager
+    global worker_manager_instance
+    worker_manager_instance = None
+    
+    text = f"✅ <b>Worker Added Successfully!</b>\n\n"
+    text += f"<b>Worker ID:</b> {worker_id}\n"
+    text += f"<b>API ID:</b> {api_id}\n"
+    text += f"<b>Session:</b> {session_name}\n\n"
+    text += "⚠️ <b>Important:</b>\n"
+    text += "• You need to authenticate this worker\n"
+    text += "• Run: python bot.py --config config.json\n"
+    text += "• Enter phone number for this account\n"
+    text += "• No channels assigned yet\n"
+    text += "• Use 'Assign Channels' to add channel pairs\n"
+    
+    bot.send_message(message.chat.id, text, parse_mode='HTML')
 
 
 # ========== STATUS ==========
