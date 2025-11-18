@@ -1302,22 +1302,48 @@ def view_worker_detail(call):
         else:
             text += f"<b>Status:</b> ❌ Not Started\n"
         
+        # Check authentication status
+        session_file = Path(f"{worker_cfg.get('session_name', 'unknown')}.session")
+        auth_status = "✅ Authenticated" if session_file.exists() else "❌ Not Authenticated"
+        
         text += f"\n<b>Configuration:</b>\n"
         text += f"• API ID: {worker_cfg.get('api_id', 'N/A')}\n"
         text += f"• Session: {worker_cfg.get('session_name', 'N/A')}\n"
+        text += f"• Authentication: {auth_status}\n"
         text += f"• Channel Pairs: {len(worker_cfg.get('channel_pairs', []))}\n"
         text += f"• Replacement Rules: {len(worker_cfg.get('replacement_rules', []))}\n"
         text += f"• Enabled: {'✅ Yes' if worker_cfg.get('enabled', True) else '❌ No'}\n"
         
+        # Check if session file exists
+        session_file = Path(f"{worker_cfg.get('session_name', 'unknown')}.session")
+        needs_auth = not session_file.exists()
+        
         markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            types.InlineKeyboardButton("🚀 Start", callback_data=f"worker_start_{worker_id}"),
-            types.InlineKeyboardButton("🛑 Stop", callback_data=f"worker_stop_{worker_id}"),
-            types.InlineKeyboardButton("🔄 Restart", callback_data=f"worker_restart_{worker_id}"),
-            types.InlineKeyboardButton("🔑 Edit API", callback_data=f"worker_edit_api_{worker_id}"),
-            types.InlineKeyboardButton("❌ Remove", callback_data=f"worker_remove_{worker_id}"),
-            types.InlineKeyboardButton("🔙 Back", callback_data="workers_details")
-        )
+        
+        if needs_auth:
+            # Show Authenticate button prominently if not authenticated
+            markup.add(
+                types.InlineKeyboardButton("🔐 Authenticate", callback_data=f"worker_auth_{worker_id}")
+            )
+            markup.add(
+                types.InlineKeyboardButton("🚀 Start", callback_data=f"worker_start_{worker_id}"),
+                types.InlineKeyboardButton("🛑 Stop", callback_data=f"worker_stop_{worker_id}"),
+                types.InlineKeyboardButton("🔄 Restart", callback_data=f"worker_restart_{worker_id}"),
+                types.InlineKeyboardButton("🔑 Edit API", callback_data=f"worker_edit_api_{worker_id}"),
+                types.InlineKeyboardButton("❌ Remove", callback_data=f"worker_remove_{worker_id}"),
+                types.InlineKeyboardButton("🔙 Back", callback_data="workers_details")
+            )
+        else:
+            # Normal buttons if already authenticated
+            markup.add(
+                types.InlineKeyboardButton("🚀 Start", callback_data=f"worker_start_{worker_id}"),
+                types.InlineKeyboardButton("🛑 Stop", callback_data=f"worker_stop_{worker_id}"),
+                types.InlineKeyboardButton("🔄 Restart", callback_data=f"worker_restart_{worker_id}"),
+                types.InlineKeyboardButton("🔑 Edit API", callback_data=f"worker_edit_api_{worker_id}"),
+                types.InlineKeyboardButton("🔐 Re-Auth", callback_data=f"worker_auth_{worker_id}"),
+                types.InlineKeyboardButton("❌ Remove", callback_data=f"worker_remove_{worker_id}"),
+                types.InlineKeyboardButton("🔙 Back", callback_data="workers_details")
+            )
         
         bot.edit_message_text(
             text,
@@ -1761,6 +1787,212 @@ def process_edit_api_hash(message):
     text += "💡 <b>Tip:</b> You can stop the worker from the Workers menu"
     
     bot.send_message(message.chat.id, text, parse_mode='HTML', reply_markup=main_menu_keyboard())
+
+
+# ========== AUTHENTICATE WORKER ==========
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_auth_"))
+def authenticate_worker(call):
+    """Show authentication instructions for a worker."""
+    worker_id = call.data.replace("worker_auth_", "")
+    
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+    
+    if not worker_cfg:
+        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+        return
+    
+    session_name = worker_cfg.get("session_name", "unknown")
+    api_id = worker_cfg.get("api_id", "N/A")
+    
+    # Check if already authenticated
+    session_file = Path(f"{session_name}.session")
+    is_authenticated = session_file.exists()
+    
+    text = f"🔐 <b>Authenticate Worker: {worker_id}</b>\n\n"
+    
+    if is_authenticated:
+        text += "⚠️ This worker is already authenticated.\n"
+        text += "Re-authenticating will replace the existing session.\n\n"
+    else:
+        text += "⚠️ This worker needs to be authenticated before it can start.\n\n"
+    
+    text += f"<b>Worker Details:</b>\n"
+    text += f"• Worker ID: <code>{worker_id}</code>\n"
+    text += f"• API ID: <code>{api_id}</code>\n"
+    text += f"• Session: <code>{session_name}</code>\n\n"
+    
+    text += "📋 <b>How to Authenticate:</b>\n\n"
+    text += "<b>Option 1 - Simple (Recommended):</b>\n"
+    text += "Copy and run this command in your terminal:\n\n"
+    text += f"<code>python3 auth_worker.py {worker_id}</code>\n\n"
+    text += "Then follow the prompts:\n"
+    text += "1️⃣ Enter phone number (with country code)\n"
+    text += "2️⃣ Enter verification code from Telegram\n"
+    text += "3️⃣ Enter 2FA password (if enabled)\n"
+    text += "4️⃣ Done! Session file created\n\n"
+    
+    text += "<b>Option 2 - Manual:</b>\n"
+    text += "1. Stop the worker if it's running\n"
+    text += "2. SSH to your server\n"
+    text += "3. Run the command above\n"
+    text += "4. Restart workers: <code>./start.sh</code>\n\n"
+    
+    text += "💡 <b>Tip:</b> After authentication, come back here and click 🚀 Start!"
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ Check Auth Status", callback_data=f"worker_check_auth_{worker_id}"),
+        types.InlineKeyboardButton("🗑️ Delete Session", callback_data=f"worker_delete_session_{worker_id}"),
+        types.InlineKeyboardButton("🔙 Back", callback_data=f"worker_view_{worker_id}")
+    )
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_check_auth_"))
+def check_worker_auth(call):
+    """Check authentication status of a worker."""
+    worker_id = call.data.replace("worker_check_auth_", "")
+    
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+    
+    if not worker_cfg:
+        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+        return
+    
+    session_name = worker_cfg.get("session_name", "unknown")
+    session_file = Path(f"{session_name}.session")
+    
+    if session_file.exists():
+        # Get file info
+        import os
+        file_size = os.path.getsize(session_file)
+        mod_time = os.path.getmtime(session_file)
+        from datetime import datetime
+        mod_date = datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M:%S')
+        
+        message = (
+            f"✅ Worker '{worker_id}' is authenticated!\n\n"
+            f"📁 Session file: {session_name}.session\n"
+            f"📊 Size: {file_size} bytes\n"
+            f"📅 Last modified: {mod_date}\n\n"
+            f"You can now start this worker!"
+        )
+        bot.answer_callback_query(call.id, message, show_alert=True)
+        
+        # Refresh the view
+        view_worker_detail(call)
+    else:
+        bot.answer_callback_query(
+            call.id,
+            f"❌ Worker '{worker_id}' is NOT authenticated.\n"
+            f"Session file '{session_name}.session' not found.\n\n"
+            f"Please run: python3 auth_worker.py {worker_id}",
+            show_alert=True
+        )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_delete_session_"))
+def delete_worker_session(call):
+    """Delete session file for a worker (requires confirmation)."""
+    worker_id = call.data.replace("worker_delete_session_", "")
+    
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+    
+    if not worker_cfg:
+        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+        return
+    
+    session_name = worker_cfg.get("session_name", "unknown")
+    
+    text = f"⚠️ <b>Delete Session File?</b>\n\n"
+    text += f"Are you sure you want to delete the session file for <b>{worker_id}</b>?\n\n"
+    text += f"Session: <code>{session_name}.session</code>\n\n"
+    text += "This will:\n"
+    text += "• Log out this worker from Telegram\n"
+    text += "• Require re-authentication to use again\n"
+    text += "• This action cannot be undone!\n\n"
+    text += "Use this if you want to switch to a different Telegram account."
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ Yes, Delete", callback_data=f"worker_delete_session_confirm_{worker_id}"),
+        types.InlineKeyboardButton("❌ Cancel", callback_data=f"worker_auth_{worker_id}")
+    )
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_delete_session_confirm_"))
+def confirm_delete_worker_session(call):
+    """Confirm and delete the session file."""
+    worker_id = call.data.replace("worker_delete_session_confirm_", "")
+    
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+    
+    if not worker_cfg:
+        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+        return
+    
+    session_name = worker_cfg.get("session_name", "unknown")
+    session_file = Path(f"{session_name}.session")
+    
+    try:
+        if session_file.exists():
+            session_file.unlink()
+            bot.answer_callback_query(
+                call.id,
+                f"✅ Session file deleted!\n\n"
+                f"Worker '{worker_id}' is now logged out.\n"
+                f"Re-authenticate to use again.",
+                show_alert=True
+            )
+        else:
+            bot.answer_callback_query(
+                call.id,
+                f"⚠️ Session file doesn't exist.",
+                show_alert=True
+            )
+        
+        # Go back to worker view
+        call.data = f"worker_view_{worker_id}"
+        view_worker_detail(call)
+        
+    except Exception as e:
+        bot.answer_callback_query(
+            call.id,
+            f"❌ Error deleting session: {str(e)}",
+            show_alert=True
+        )
 
 
 # ========== STATUS ==========
