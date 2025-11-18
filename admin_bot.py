@@ -1314,6 +1314,7 @@ def view_worker_detail(call):
             types.InlineKeyboardButton("🚀 Start", callback_data=f"worker_start_{worker_id}"),
             types.InlineKeyboardButton("🛑 Stop", callback_data=f"worker_stop_{worker_id}"),
             types.InlineKeyboardButton("🔄 Restart", callback_data=f"worker_restart_{worker_id}"),
+            types.InlineKeyboardButton("🔑 Edit API", callback_data=f"worker_edit_api_{worker_id}"),
             types.InlineKeyboardButton("❌ Remove", callback_data=f"worker_remove_{worker_id}"),
             types.InlineKeyboardButton("🔙 Back", callback_data="workers_details")
         )
@@ -1637,6 +1638,129 @@ def process_session_name(message):
     text += "• Use 'Assign Channels' to add channel pairs\n"
     
     bot.send_message(message.chat.id, text, parse_mode='HTML')
+
+
+# ========== EDIT WORKER API CREDENTIALS ==========
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_edit_api_"))
+def edit_worker_api_start(call):
+    """Start editing worker API credentials."""
+    worker_id = call.data.replace("worker_edit_api_", "")
+    
+    bot.clear_step_handler_by_chat_id(call.message.chat.id)
+    
+    # Clear temp storage
+    if call.message.chat.id in temp_storage:
+        temp_storage.pop(call.message.chat.id)
+    
+    # Store worker ID
+    temp_storage[call.message.chat.id] = {"edit_worker_id": worker_id}
+    
+    text = f"🔑 <b>Edit API Credentials - {worker_id}</b>\n\n"
+    text += "⚠️ <b>Important:</b> Changing API credentials will require re-authentication!\n\n"
+    text += "Please enter the new <b>API ID</b> (number)\n"
+    text += "Get it from https://my.telegram.org\n\n"
+    text += "Send /cancel to abort"
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data=f"worker_view_{worker_id}"))
+    
+    msg = bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+    
+    bot.register_next_step_handler(msg, process_edit_api_id)
+
+
+def process_edit_api_id(message):
+    """Process new API ID input."""
+    if message.text == "/cancel":
+        worker_id = temp_storage.get(message.chat.id, {}).get("edit_worker_id")
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Cancelled")
+        return
+    
+    try:
+        api_id = int(message.text.strip())
+        temp_storage[message.chat.id]["new_api_id"] = api_id
+        
+        worker_id = temp_storage[message.chat.id]["edit_worker_id"]
+        
+        text = f"✅ API ID: <b>{api_id}</b>\n\n"
+        text += "Now enter the new <b>API Hash</b> (string)\n"
+        text += "Get it from https://my.telegram.org\n\n"
+        text += "Send /cancel to abort"
+        
+        bot.send_message(message.chat.id, text, parse_mode='HTML')
+        bot.register_next_step_handler(message, process_edit_api_hash)
+        
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ Invalid API ID. Please enter a number.")
+        bot.register_next_step_handler(message, process_edit_api_id)
+
+
+def process_edit_api_hash(message):
+    """Process new API Hash and complete the update."""
+    if message.text == "/cancel":
+        worker_id = temp_storage.get(message.chat.id, {}).get("edit_worker_id")
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Cancelled")
+        return
+    
+    api_hash = message.text.strip()
+    
+    # Get all data from temp storage
+    data = temp_storage.pop(message.chat.id)
+    worker_id = data["edit_worker_id"]
+    new_api_id = data["new_api_id"]
+    
+    # Update config
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_found = False
+    old_api_id = None
+    old_session = None
+    
+    for worker in workers_config:
+        if worker["worker_id"] == worker_id:
+            old_api_id = worker.get("api_id")
+            old_session = worker.get("session_name")
+            worker["api_id"] = new_api_id
+            worker["api_hash"] = api_hash
+            worker_found = True
+            break
+    
+    if not worker_found:
+        bot.send_message(message.chat.id, f"❌ Worker '{worker_id}' not found.")
+        return
+    
+    config_manager.config = config
+    config_manager.save()
+    
+    # Reload worker manager
+    global worker_manager_instance
+    worker_manager_instance = None
+    
+    text = f"✅ <b>API Credentials Updated!</b>\n\n"
+    text += f"<b>Worker:</b> {worker_id}\n"
+    text += f"<b>Old API ID:</b> {old_api_id}\n"
+    text += f"<b>New API ID:</b> {new_api_id}\n"
+    text += f"<b>New API Hash:</b> {api_hash[:20]}...\n\n"
+    text += "⚠️ <b>Important Next Steps:</b>\n"
+    text += "1. Stop the worker if it's running\n"
+    text += f"2. Delete the old session file: <code>{old_session}.session</code>\n"
+    text += "3. Restart the bot: <code>./start.sh</code>\n"
+    text += "4. Re-authenticate with the new account\n"
+    text += "5. Enter the phone number for the new API account\n\n"
+    text += "💡 <b>Tip:</b> You can stop the worker from the Workers menu"
+    
+    bot.send_message(message.chat.id, text, parse_mode='HTML', reply_markup=main_menu_keyboard())
 
 
 # ========== STATUS ==========
