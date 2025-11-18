@@ -62,6 +62,10 @@ config.json.backup
 backfill_tracking.json
 trigger_backfill.flag
 
+# Worker-specific config files (auto-generated)
+worker_*.json
+worker_*_config.json
+
 # IDE
 .vscode/
 .idea/
