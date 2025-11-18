@@ -124,9 +124,39 @@ class TelegramForwarder:
     async def _check_and_backfill_new_pairs(self) -> None:
         """Check for new channel pairs and backfill them automatically."""
         try:
-            # Reload config to get latest pairs
-            self.config_manager.load()
-            channel_pairs = self.config_manager.get_channel_pairs()
+            # IMPORTANT: In multi-worker mode, we need to reload from the MAIN config.json
+            # and get THIS worker's pairs, not just reload our temp worker config
+            main_config_path = Path("config.json")
+            
+            if main_config_path.exists():
+                # Load main config
+                with open(main_config_path, 'r') as f:
+                    import json
+                    main_config = json.load(f)
+                
+                # Check if multi-worker mode
+                if "workers" in main_config and isinstance(main_config.get("workers"), list):
+                    # Find our worker's config by matching session_name
+                    our_session = self.session_name
+                    worker_cfg = next(
+                        (w for w in main_config["workers"] if w.get("session_name") == our_session),
+                        None
+                    )
+                    
+                    if worker_cfg:
+                        channel_pairs = worker_cfg.get("channel_pairs", [])
+                        self.logger.info(f"📥 Reloaded {len(channel_pairs)} pairs from main config for session: {our_session}")
+                    else:
+                        self.logger.warning(f"⚠️ Could not find worker config for session: {our_session}")
+                        channel_pairs = []
+                else:
+                    # Single-worker mode, use config_manager
+                    self.config_manager.load()
+                    channel_pairs = self.config_manager.get_channel_pairs()
+            else:
+                # Fallback to current config_manager
+                self.config_manager.load()
+                channel_pairs = self.config_manager.get_channel_pairs()
             
             new_pairs_found = False
             
