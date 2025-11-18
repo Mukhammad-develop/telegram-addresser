@@ -1890,10 +1890,22 @@ def process_auth_phone(message):
         client = TelegramClient(session_name, api_id, api_hash)
         
         async def send_code():
-            await client.connect()
-            result = await client.send_code_request(phone)
-            await client.disconnect()
-            return result.phone_code_hash
+            try:
+                # Connect to Telegram
+                await client.connect()
+                
+                # Check if connected
+                if not client.is_connected():
+                    raise ConnectionError("Failed to connect to Telegram servers")
+                
+                # Send code request
+                result = await client.send_code_request(phone)
+                
+                return result.phone_code_hash
+            finally:
+                # Always disconnect
+                if client.is_connected():
+                    await client.disconnect()
         
         phone_code_hash = loop.run_until_complete(send_code())
         loop.close()
@@ -1919,12 +1931,33 @@ def process_auth_phone(message):
             f"Please wait {e.seconds} seconds before trying again.",
             parse_mode='HTML'
         )
-    except Exception as e:
+    except ConnectionError as e:
         temp_storage.pop(message.chat.id, None)
         bot.send_message(
             message.chat.id,
-            f"❌ <b>Error:</b> {str(e)}\n\n"
-            f"Please check the phone number and try again.",
+            f"❌ <b>Connection Error</b>\n\n"
+            f"{str(e)}\n\n"
+            f"<b>Possible causes:</b>\n"
+            f"• Check your internet connection\n"
+            f"• API credentials might be invalid\n"
+            f"• Telegram servers might be down\n\n"
+            f"<b>What to check:</b>\n"
+            f"• API ID: <code>{api_id}</code>\n"
+            f"• Make sure API credentials are correct",
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        temp_storage.pop(message.chat.id, None)
+        error_name = type(e).__name__
+        bot.send_message(
+            message.chat.id,
+            f"❌ <b>Error: {error_name}</b>\n\n"
+            f"{str(e)}\n\n"
+            f"<b>Troubleshooting:</b>\n"
+            f"• Check phone number format (+country code)\n"
+            f"• Verify API ID: <code>{api_id}</code>\n"
+            f"• Make sure worker API credentials are correct\n"
+            f"• Try editing API credentials and try again",
             parse_mode='HTML'
         )
 
@@ -1960,21 +1993,25 @@ def process_auth_code(message):
         client = TelegramClient(session_name, api_id, api_hash)
         
         async def sign_in():
-            await client.connect()
             try:
-                result = await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
-                me = await client.get_me()
-                await client.disconnect()
-                return True, me, None
-            except SessionPasswordNeededError:
-                await client.disconnect()
-                return False, None, "2FA required"
-            except PhoneCodeInvalidError:
-                await client.disconnect()
-                return False, None, "Invalid code"
-            except Exception as e:
-                await client.disconnect()
-                return False, None, str(e)
+                await client.connect()
+                
+                if not client.is_connected():
+                    raise ConnectionError("Failed to connect to Telegram servers")
+                
+                try:
+                    result = await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
+                    me = await client.get_me()
+                    return True, me, None
+                except SessionPasswordNeededError:
+                    return False, None, "2FA required"
+                except PhoneCodeInvalidError:
+                    return False, None, "Invalid code"
+                except Exception as e:
+                    return False, None, str(e)
+            finally:
+                if client.is_connected():
+                    await client.disconnect()
         
         success, me, error = loop.run_until_complete(sign_in())
         loop.close()
@@ -2055,15 +2092,21 @@ def process_auth_2fa(message):
         client = TelegramClient(session_name, api_id, api_hash)
         
         async def check_password():
-            await client.connect()
             try:
-                await client.sign_in(password=password)
-                me = await client.get_me()
-                await client.disconnect()
-                return True, me, None
-            except Exception as e:
-                await client.disconnect()
-                return False, None, str(e)
+                await client.connect()
+                
+                if not client.is_connected():
+                    raise ConnectionError("Failed to connect to Telegram servers")
+                
+                try:
+                    await client.sign_in(password=password)
+                    me = await client.get_me()
+                    return True, me, None
+                except Exception as e:
+                    return False, None, str(e)
+            finally:
+                if client.is_connected():
+                    await client.disconnect()
         
         success, me, error = loop.run_until_complete(check_password())
         loop.close()
