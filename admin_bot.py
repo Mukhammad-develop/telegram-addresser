@@ -1429,7 +1429,7 @@ def restart_worker(call):
         bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_remove_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_remove_") and not call.data.startswith("worker_remove_confirm_"))
 def remove_worker(call):
     """Remove a worker from configuration."""
     worker_id = call.data.replace("worker_remove_", "")
@@ -1444,7 +1444,7 @@ def remove_worker(call):
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton("✅ Yes, Remove", callback_data=f"worker_remove_confirm_{worker_id}"),
+        types.InlineKeyboardButton("✅ Yes, Remove", callback_data=f"confirm_remove_{worker_id}"),
         types.InlineKeyboardButton("❌ Cancel", callback_data=f"worker_view_{worker_id}")
     )
     
@@ -1457,10 +1457,10 @@ def remove_worker(call):
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("worker_remove_confirm_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("confirm_remove_"))
 def confirm_remove_worker(call):
     """Confirm and remove worker."""
-    worker_id = call.data.replace("worker_remove_confirm_", "")
+    worker_id = call.data.replace("confirm_remove_", "")
     
     try:
         # Stop worker if running
