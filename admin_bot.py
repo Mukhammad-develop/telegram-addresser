@@ -815,8 +815,37 @@ def process_remove_rule(message):
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_filters")
 def show_filters(call):
-    """Show filter settings."""
+    """Show filter settings - check if multi-worker mode first."""
     config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    # Multi-worker mode: ask which worker
+    if workers_config:
+        text = "🔍 <b>Message Filters</b>\n\n"
+        text += "Select a worker to manage its filters:\n\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        
+        for worker_cfg in workers_config:
+            worker_id = worker_cfg["worker_id"]
+            filters = worker_cfg.get("filters", {})
+            enabled_status = "✅" if filters.get("enabled") else "❌"
+            button_text = f"👷 {worker_id} ({enabled_status} filters)"
+            markup.add(types.InlineKeyboardButton(button_text, callback_data=f"filters_worker_{worker_id}"))
+        
+        markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        return
+    
+    # Single-worker mode
     filters = config_manager.get_filters()
     
     enabled = "✅ Enabled" if filters.get("enabled") else "❌ Disabled"
@@ -844,6 +873,53 @@ def show_filters(call):
         types.InlineKeyboardButton("🗑️ Clear Keywords", callback_data="clear_keywords")
     )
     markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("filters_worker_"))
+def show_worker_filters(call):
+    """Show filters for a specific worker."""
+    worker_id = call.data.replace("filters_worker_", "")
+    
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+    
+    if not worker_cfg:
+        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+        return
+    
+    # Store selected worker in temp storage
+    temp_storage[call.message.chat.id] = {"selected_worker_id": worker_id}
+    
+    filters = worker_cfg.get("filters", {})
+    
+    enabled = "✅ Enabled" if filters.get("enabled") else "❌ Disabled"
+    mode = filters.get("mode", "whitelist").capitalize()
+    keywords = filters.get("keywords", [])
+    
+    text = f"🔍 <b>Message Filters - {worker_id}</b>\n\n"
+    text += f"Status: {enabled}\n"
+    text += f"Mode: <b>{mode}</b>\n\n"
+    
+    if keywords:
+        text += "<b>Keywords:</b>\n"
+        for kw in keywords:
+            text += f"  • {kw}\n"
+    else:
+        text += "No keywords configured.\n"
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("🔄 Toggle", callback_data="toggle_filters"),
+        types.InlineKeyboardButton("📝 Change Mode", callback_data="change_filter_mode")
+    )
+    markup.add(
+        types.InlineKeyboardButton("➕ Add Keyword", callback_data="add_keyword"),
+        types.InlineKeyboardButton("🗑️ Clear Keywords", callback_data="clear_keywords")
+    )
+    markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="menu_filters"))
     
     bot.edit_message_text(
         text,
@@ -933,8 +1009,35 @@ def clear_keywords(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_settings")
 def show_settings(call):
-    """Show settings."""
+    """Show settings - check if multi-worker mode first."""
     config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    # Multi-worker mode: ask which worker
+    if workers_config:
+        text = "⚙️ <b>Bot Settings</b>\n\n"
+        text += "Select a worker to view its settings:\n\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        
+        for worker_cfg in workers_config:
+            worker_id = worker_cfg["worker_id"]
+            button_text = f"👷 {worker_id}"
+            markup.add(types.InlineKeyboardButton(button_text, callback_data=f"settings_worker_{worker_id}"))
+        
+        markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        return
+    
+    # Single-worker mode
     settings = config_manager.get_settings()
     
     text = "⚙️ <b>Bot Settings</b>\n\n"
@@ -946,6 +1049,46 @@ def show_settings(call):
     
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("settings_worker_"))
+def show_worker_settings(call):
+    """Show settings for a specific worker."""
+    worker_id = call.data.replace("settings_worker_", "")
+    
+    config_manager.load()
+    config = config_manager.config
+    workers_config = config.get("workers", [])
+    
+    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+    
+    if not worker_cfg:
+        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+        return
+    
+    # Store selected worker in temp storage
+    temp_storage[call.message.chat.id] = {"selected_worker_id": worker_id}
+    
+    settings = worker_cfg.get("settings", {})
+    
+    text = f"⚙️ <b>Bot Settings - {worker_id}</b>\n\n"
+    text += f"Retry Attempts: <code>{settings.get('retry_attempts', 5)}</code>\n"
+    text += f"Retry Delay: <code>{settings.get('retry_delay', 5)}s</code>\n"
+    text += f"Flood Wait Extra: <code>{settings.get('flood_wait_extra_delay', 10)}s</code>\n"
+    text += f"Max Message Length: <code>{settings.get('max_message_length', 4096)}</code>\n"
+    text += f"Log Level: <code>{settings.get('log_level', 'INFO')}</code>\n"
+    text += f"Add Source Link: <code>{settings.get('add_source_link', False)}</code>\n"
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="menu_settings"))
     
     bot.edit_message_text(
         text,
