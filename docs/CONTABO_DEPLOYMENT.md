@@ -109,8 +109,8 @@ cd ~/projects
 git clone https://github.com/Mukhammad-develop/telegram-addresser.git
 cd telegram-addresser
 
-# Switch to v0.6 branch
-git checkout v0.6
+# Switch to main branch
+git checkout main
 ```
 
 ## 🔧 Step 5: Set Up Python Environment
@@ -287,7 +287,7 @@ systemctl restart telegram-forwarder
 ### Update the bot:
 ```bash
 cd ~/projects/telegram-addresser
-git pull origin v0.6
+git pull origin main
 source venv/bin/activate
 pip install -r requirements.txt
 systemctl restart telegram-forwarder

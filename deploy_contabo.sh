@@ -30,13 +30,13 @@ cd ~/projects
 if [ -d "telegram-addresser" ]; then
     echo "📥 Updating existing repository..."
     cd telegram-addresser
-    git checkout v0.6
-    git pull origin v0.6
+    git checkout main
+    git pull origin main
 else
     echo "📥 Cloning repository..."
     git clone https://github.com/Mukhammad-develop/telegram-addresser.git
     cd telegram-addresser
-    git checkout v0.6
+    git checkout main
 fi
 
 # Create virtual environment
