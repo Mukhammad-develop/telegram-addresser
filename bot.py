@@ -124,9 +124,39 @@ class TelegramForwarder:
     async def _check_and_backfill_new_pairs(self) -> None:
         """Check for new channel pairs and backfill them automatically."""
         try:
-            # Reload config to get latest pairs
-            self.config_manager.load()
-            channel_pairs = self.config_manager.get_channel_pairs()
+            # IMPORTANT: In multi-worker mode, we need to reload from the MAIN config.json
+            # and get THIS worker's pairs, not just reload our temp worker config
+            main_config_path = Path("config.json")
+            
+            if main_config_path.exists():
+                # Load main config
+                with open(main_config_path, 'r') as f:
+                    import json
+                    main_config = json.load(f)
+                
+                # Check if multi-worker mode
+                if "workers" in main_config and isinstance(main_config.get("workers"), list):
+                    # Find our worker's config by matching session_name
+                    our_session = self.session_name
+                    worker_cfg = next(
+                        (w for w in main_config["workers"] if w.get("session_name") == our_session),
+                        None
+                    )
+                    
+                    if worker_cfg:
+                        channel_pairs = worker_cfg.get("channel_pairs", [])
+                        self.logger.info(f"📥 Reloaded {len(channel_pairs)} pairs from main config for session: {our_session}")
+                    else:
+                        self.logger.warning(f"⚠️ Could not find worker config for session: {our_session}")
+                        channel_pairs = []
+                else:
+                    # Single-worker mode, use config_manager
+                    self.config_manager.load()
+                    channel_pairs = self.config_manager.get_channel_pairs()
+            else:
+                # Fallback to current config_manager
+                self.config_manager.load()
+                channel_pairs = self.config_manager.get_channel_pairs()
             
             new_pairs_found = False
             
@@ -263,8 +293,14 @@ class TelegramForwarder:
         Args:
             event: Telethon NewMessage event
         """
+        # Track timing for delay analysis
+        import time as time_module
+        start_time = time_module.time()
+        
         message = event.message
         source_chat_id = event.chat_id
+        
+        self.logger.info(f"⏱️ [TIMING] Message {message.id} received at {start_time}")
         
         # Check if this message is part of a media group we've already processed
         if message.grouped_id:
@@ -304,7 +340,11 @@ class TelegramForwarder:
         
         # Forward to all target channels
         for target in targets:
+            forward_start = time_module.time()
             await self.forward_message_with_retry(message, source_chat_id, target)
+            forward_end = time_module.time()
+            forward_duration = forward_end - start_time
+            self.logger.info(f"⏱️ [TIMING] Message {message.id} forwarded in {forward_duration:.2f}s (processing time: {forward_end - forward_start:.2f}s)")
     
     async def forward_message_with_retry(
         self, 
@@ -856,10 +896,67 @@ class TelegramForwarder:
 
 async def main():
     """Main entry point."""
-    bot = TelegramForwarder()
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Telegram Forwarder Bot')
+    parser.add_argument('--config', type=str, default='config.json',
+                       help='Path to configuration file')
+    parser.add_argument('--auth-only', action='store_true',
+                       help='Only perform authentication, then exit')
+    args = parser.parse_args()
+    
+    # Check if config is multi-worker format
+    try:
+        with open(args.config, 'r') as f:
+            config_data = json.load(f)
+        
+        if "workers" in config_data and isinstance(config_data.get("workers"), list):
+            # Multi-worker config detected
+            print("\n" + "="*60)
+            print("⚠️  MULTI-WORKER CONFIG DETECTED")
+            print("="*60)
+            print("\n❌ You're trying to run bot.py directly with a multi-worker config.")
+            print("\n📝 To use multi-worker mode:\n")
+            print("   ./start.sh")
+            print("\n📝 To authenticate a specific worker:\n")
+            print("   1. Find the worker's session name in config.json")
+            print(f"   2. Create a temporary single-worker config")
+            print("   3. Or use the admin bot to manage workers")
+            print("\n💡 Your workers:")
+            for worker in config_data.get("workers", []):
+                worker_id = worker.get("worker_id", "unknown")
+                session = worker.get("session_name", "unknown")
+                api_id = worker.get("api_id", "N/A")
+                print(f"   • {worker_id}: session={session}, api_id={api_id}")
+            print("\n📚 See docs/V0.6_FEATURES.md for more info")
+            print("="*60 + "\n")
+            return
+    except FileNotFoundError:
+        print(f"❌ Config file not found: {args.config}")
+        return
+    except json.JSONDecodeError:
+        print(f"❌ Invalid JSON in config file: {args.config}")
+        return
+    
+    # Single-worker mode - proceed normally
+    try:
+        bot = TelegramForwarder(args.config)
+    except ValueError as e:
+        print(f"\n❌ Configuration Error: {e}\n")
+        return
     
     try:
-        await bot.start()
+        if args.auth_only:
+            print("\n🔐 Authentication Mode")
+            print("This will only authenticate and create the session file.\n")
+            await bot.client.start()
+            print(f"\n✅ Authentication successful!")
+            print(f"📁 Session file created: {bot.session_name}.session")
+            print(f"🎉 You can now start the bot normally.\n")
+            await bot.client.disconnect()
+        else:
+            await bot.start()
     except KeyboardInterrupt:
         print("\n\nReceived interrupt signal. Shutting down gracefully...")
     except Exception as e:
@@ -867,7 +964,8 @@ async def main():
         logger.critical(f"Fatal error: {type(e).__name__}: {e}", exc_info=True)
         raise
     finally:
-        await bot.stop()
+        if not args.auth_only:
+            await bot.stop()
 
 
 if __name__ == "__main__":

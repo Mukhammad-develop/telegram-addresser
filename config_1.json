@@ -1,0 +1,69 @@
+{
+  "admin_bot_token": "bot_token_here",
+  "admin_user_ids": [
+    123456789
+  ],
+  "workers": [
+    {
+      "worker_id": "worker_1",
+      "api_id": 12345678,
+      "api_hash": "api_hash_here",
+      "session_name": "forwarder_session",
+      "enabled": true,
+      "channel_pairs": [
+        {
+          "source": -1001234567890,
+          "target": -1009876543210,
+          "enabled": false,
+          "backfill_count": 40
+        },
+        {
+          "source": -1002345678901,
+          "target": -1009876543210,
+          "enabled": true,
+          "backfill_count": 10
+        },
+        {
+          "source": -1003456789012,
+          "target": -1009876543210,
+          "enabled": true,
+          "backfill_count": 10
+        },
+        {
+          "source": -1004567890123,
+          "target": -1009876543210,
+          "enabled": true,
+          "backfill_count": 10
+        }
+      ],
+      "replacement_rules": [
+        {
+          "find": "https://old.com",
+          "replace": "https://new.com",
+          "case_sensitive": true,
+          "is_regex": false
+        },
+        {
+          "find": "Good Night",
+          "replace": "Hello",
+          "case_sensitive": true,
+          "is_regex": false
+        }
+      ],
+      "filters": {
+        "enabled": false,
+        "mode": "whitelist",
+        "keywords": []
+      },
+      "settings": {
+        "retry_attempts": 5,
+        "retry_delay": 5,
+        "flood_wait_extra_delay": 10,
+        "max_message_length": 4096,
+        "log_level": "INFO",
+        "add_source_link": true,
+        "source_link_text": "\n\n🔗 Source: {link}"
+      }
+    }
+  ]
+}
