@@ -38,7 +38,49 @@ ssh root@YOUR_VPS_IP
 
 **First time connection:** Type `yes` when asked to accept the fingerprint.
 
-**Enter password:** `VhuoT7S9mBfX` (or your VPS root password)
+**Enter password:** The VPS root password (may be different from Contabo account password)
+
+### ⚠️ SSH Password Issues?
+
+If you get "Permission denied", try these solutions:
+
+#### Solution 1: Get Root Password from Contabo Panel
+1. Login to https://contabo.com
+2. Go to **VPS** section
+3. Click on your VPS server
+4. Look for **"Root Password"** or **"Reset Password"** option
+5. Contabo usually sends the root password via email when VPS is created
+6. Check your email (tomassadko@gmail.com) for VPS setup email
+
+#### Solution 2: Reset Root Password via Contabo Panel
+1. Login to Contabo control panel
+2. Go to **VPS** → Your server
+3. Look for **"Reset Password"** or **"Change Root Password"** button
+4. Set a new password
+5. Wait 2-3 minutes for it to apply
+6. Try SSH again with new password
+
+#### Solution 3: Use VNC Access (If SSH doesn't work)
+1. In Contabo panel, find **VNC** section
+2. Click **"Open VNC Console"** or use VNC details:
+   - **VNC Address:** `38.242.158.108:63101` (from your screenshot)
+3. Connect via VNC client (TightVNC, RealVNC, or browser)
+4. Login with root and password
+5. Reset SSH password from inside the server:
+   ```bash
+   passwd root
+   # Enter new password twice
+   ```
+
+#### Solution 4: Check if SSH is Enabled
+Some Contabo VPS might have SSH disabled initially. Use VNC to enable it:
+```bash
+# Via VNC, login and run:
+systemctl status ssh
+# If disabled:
+systemctl enable ssh
+systemctl start ssh
+```
 
 ## 📦 Step 3: Install Required Software
 
