@@ -147,9 +147,14 @@ PythonAnywhere uses **Scheduled Tasks** for long-running processes.
 
 ### Method 2: Using Always-On Task (Paid Tier Only)
 
+You need to create **TWO always-on tasks** - one for forwarding workers and one for admin bot.
+
+#### Task 1: Forwarding Workers
+
 1. In PythonAnywhere dashboard, click **"Tasks"** tab
 2. Click **"Create a new always-on task"**
 3. Fill in:
+   - **Description:** `Telegram Forwarder Workers`
    - **Command:**
      ```bash
      cd /home/yourusername/telegram-addresser && source venv/bin/activate && python3 worker_manager.py
@@ -157,7 +162,23 @@ PythonAnywhere uses **Scheduled Tasks** for long-running processes.
    - **Enabled:** ✅ Check this box
 4. Click **"Create"**
 
-This will keep the bot running 24/7 without restarting.
+This runs the forwarding workers (bot.py instances) 24/7.
+
+#### Task 2: Admin Bot
+
+1. Click **"Create a new always-on task"** again
+2. Fill in:
+   - **Description:** `Admin Bot`
+   - **Command:**
+     ```bash
+     cd /home/yourusername/telegram-addresser && source venv/bin/activate && python3 admin_bot.py
+     ```
+   - **Enabled:** ✅ Check this box
+3. Click **"Create"**
+
+This runs the admin bot 24/7 so you can manage workers via Telegram.
+
+> **Note:** Replace `yourusername` with your PythonAnywhere username in both commands.
 
 ### Method 3: Using Web App (Alternative)
 
@@ -283,10 +304,19 @@ python3 auth_worker.py worker_1
 /home/yourusername/telegram-addresser/logs/forwarder.log
 ```
 
-### Start Command:
+### Start Commands:
+
+**For Forwarding Workers:**
 ```bash
 cd /home/yourusername/telegram-addresser && source venv/bin/activate && python3 worker_manager.py
 ```
+
+**For Admin Bot:**
+```bash
+cd /home/yourusername/telegram-addresser && source venv/bin/activate && python3 admin_bot.py
+```
+
+> **Note:** You need to create TWO always-on tasks - one for each command above.
 
 ## 💡 Tips
 
