@@ -128,7 +128,9 @@ pip install -r requirements.txt
 
 ## ⚙️ Step 6: Configure the Bot
 
-### Option A: Upload config.json from your computer
+⚠️ **IMPORTANT:** You MUST configure `config.json` before starting the bot! The bot will NOT start automatically and will fail if config.json is missing or incorrect.
+
+### Option A: Upload config.json from your computer (Recommended)
 
 **On your local computer:**
 ```bash

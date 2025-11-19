@@ -53,16 +53,45 @@ pip install -r requirements.txt
 chmod +x start.sh
 chmod +x auth_worker.py
 
+# Setup config.json
+echo "⚙️  Setting up configuration..."
+if [ ! -f "config.json" ]; then
+    echo "📝 Creating config.json from example..."
+    cp config.example.json config.json
+    echo "⚠️  IMPORTANT: Edit config.json with your credentials before starting!"
+    echo "   Run: nano config.json"
+    echo "   Or upload your own config.json file"
+else
+    echo "✅ config.json already exists"
+fi
+
 echo ""
 echo "✅ Installation complete!"
 echo ""
-echo "📝 Next steps:"
-echo "1. Copy your config.json to: ~/projects/telegram-addresser/"
-echo "2. Authenticate workers: python3 auth_worker.py worker_1"
-echo "3. Start the bot: ./start.sh"
+echo "📝 IMPORTANT: Configure before starting!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "💡 To run in background, use: screen -S telegram-bot"
-echo "💡 To detach: Press Ctrl+A, then D"
-echo "💡 To reattach: screen -r telegram-bot"
+echo "1️⃣  Edit config.json with your credentials:"
+echo "   cd ~/projects/telegram-addresser"
+echo "   nano config.json"
+echo ""
+echo "   Or upload your config.json from your computer:"
+echo "   scp config.json root@YOUR_VPS_IP:~/projects/telegram-addresser/"
+echo ""
+echo "2️⃣  Authenticate workers (after config is ready):"
+echo "   source venv/bin/activate"
+echo "   python3 auth_worker.py worker_1"
+echo ""
+echo "3️⃣  Start the bot (only after config and auth are done):"
+echo "   ./start.sh"
+echo ""
+echo "💡 To run in background:"
+echo "   screen -S telegram-bot"
+echo "   ./start.sh"
+echo "   Press Ctrl+A, then D to detach"
+echo "   screen -r telegram-bot to reattach"
+echo ""
+echo "⚠️  The bot will NOT start automatically!"
+echo "   You must configure config.json and authenticate first."
 echo ""
 
