@@ -38,7 +38,79 @@ ssh root@YOUR_VPS_IP
 
 **First time connection:** Type `yes` when asked to accept the fingerprint.
 
-**Enter password:** `VhuoT7S9mBfX` (or your VPS root password)
+**Enter password:** The VPS root password (may be different from Contabo account password)
+
+### ⚠️ SSH Password Issues?
+
+If you get "Permission denied", try these solutions:
+
+#### Solution 1: Get Root Password from Contabo Panel
+1. Login to https://contabo.com
+2. Go to **VPS** section
+3. Click on your VPS server
+4. Look for **"Root Password"** or **"Reset Password"** option
+5. Contabo usually sends the root password via email when VPS is created
+6. Check your email (tomassadko@gmail.com) for VPS setup email
+
+#### Solution 2: Reset Root Password via Contabo Panel
+1. Login to Contabo control panel
+2. Go to **VPS** → Your server
+3. Look for **"Reset Password"** or **"Change Root Password"** button
+4. Set a new password
+5. Wait 2-3 minutes for it to apply
+6. Try SSH again with new password
+
+#### Solution 3: Use VNC Access (If SSH doesn't work)
+1. In Contabo panel, find **VNC** section
+2. Note the **VNC Info** address (e.g., `38.242.158.108:63101`)
+3. **Set VNC password** (if not set):
+   - Click **"Set password"** button in VNC Control pop-up
+   - Enter a password for VNC access
+   - Click **"Confirm"**
+4. **Connect via VNC client:**
+   
+   **On Mac:**
+   - Download **RealVNC Viewer** or **TightVNC Viewer**
+   - Or use built-in **Screen Sharing** app:
+     - Open Finder → Go → Connect to Server (Cmd+K)
+     - Enter: `vnc://38.242.158.108:63101`
+     - Click Connect
+   
+   **On Windows:**
+   - Download **TightVNC Viewer** or **RealVNC Viewer**
+   - Open the VNC client
+   - Enter server: `38.242.158.108:63101`
+   - Click Connect
+   
+   **On Linux:**
+   - Install: `sudo apt install remmina` or `sudo apt install tigervnc-viewer`
+   - Connect to: `38.242.158.108:63101`
+   
+   **Or use browser-based VNC:**
+   - Try: `https://38.242.158.108:63101` in your browser
+   - Or use: https://novnc.com/noVNC/vnc.html?host=38.242.158.108&port=63101
+
+5. **Login via VNC:**
+   - Enter username: `root`
+   - Enter password: (your VPS root password or VNC password you just set)
+   
+6. **Reset SSH password from inside the server:**
+   ```bash
+   passwd root
+   # Enter new password twice
+   ```
+   
+7. **Then try SSH again** with the new password
+
+#### Solution 4: Check if SSH is Enabled
+Some Contabo VPS might have SSH disabled initially. Use VNC to enable it:
+```bash
+# Via VNC, login and run:
+systemctl status ssh
+# If disabled:
+systemctl enable ssh
+systemctl start ssh
+```
 
 ## 📦 Step 3: Install Required Software
 
@@ -67,8 +139,8 @@ cd ~/projects
 git clone https://github.com/Mukhammad-develop/telegram-addresser.git
 cd telegram-addresser
 
-# Switch to v0.6 branch
-git checkout v0.6
+# Switch to main branch
+git checkout main
 ```
 
 ## 🔧 Step 5: Set Up Python Environment
@@ -86,7 +158,9 @@ pip install -r requirements.txt
 
 ## ⚙️ Step 6: Configure the Bot
 
-### Option A: Upload config.json from your computer
+⚠️ **IMPORTANT:** You MUST configure `config.json` before starting the bot! The bot will NOT start automatically and will fail if config.json is missing or incorrect.
+
+### Option A: Upload config.json from your computer (Recommended)
 
 **On your local computer:**
 ```bash
@@ -245,7 +319,7 @@ systemctl restart telegram-forwarder
 ### Update the bot:
 ```bash
 cd ~/projects/telegram-addresser
-git pull origin v0.6
+git pull origin main
 source venv/bin/activate
 pip install -r requirements.txt
 systemctl restart telegram-forwarder

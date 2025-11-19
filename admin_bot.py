@@ -7,7 +7,7 @@ import time
 import asyncio
 from pathlib import Path
 from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, FloodWaitError
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, FloodWaitError, PhoneMigrateError
 from src.config_manager import ConfigManager
 from worker_manager import WorkerManager, WorkerProcess
 
@@ -2068,6 +2068,7 @@ def process_auth_phone(message):
                     raise ConnectionError("Failed to connect to Telegram servers")
                 
                 # Send code request
+                # Telethon will automatically handle DC migration if needed
                 result = await client.send_code_request(phone)
                 
                 return result.phone_code_hash
@@ -2092,6 +2093,23 @@ def process_auth_phone(message):
         bot.send_message(message.chat.id, text, parse_mode='HTML')
         bot.register_next_step_handler(message, process_auth_code)
         
+    except PhoneMigrateError as e:
+        temp_storage.pop(message.chat.id, None)
+        new_dc = e.new_dc
+        worker_id = data.get("auth_worker_id", "unknown")
+        bot.send_message(
+            message.chat.id,
+            f"⚠️ <b>Data Center Migration Required</b>\n\n"
+            f"Your phone number <code>{phone}</code> is associated with DC {new_dc}.\n\n"
+            f"<b>This is normal!</b> Telegram uses multiple data centers.\n\n"
+            f"<b>Solution:</b>\n"
+            f"1. Click 🔐 Authenticate again - Telethon will automatically connect to DC {new_dc}\n"
+            f"2. Or use terminal authentication (more reliable):\n"
+            f"   <code>python3 auth_worker.py {worker_id}</code>\n\n"
+            f"💡 Terminal authentication handles DC migration automatically.",
+            parse_mode='HTML',
+            reply_markup=main_menu_keyboard()
+        )
     except FloodWaitError as e:
         temp_storage.pop(message.chat.id, None)
         bot.send_message(
