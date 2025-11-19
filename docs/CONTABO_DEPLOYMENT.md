@@ -62,15 +62,45 @@ If you get "Permission denied", try these solutions:
 
 #### Solution 3: Use VNC Access (If SSH doesn't work)
 1. In Contabo panel, find **VNC** section
-2. Click **"Open VNC Console"** or use VNC details:
-   - **VNC Address:** `38.242.158.108:63101` (from your screenshot)
-3. Connect via VNC client (TightVNC, RealVNC, or browser)
-4. Login with root and password
-5. Reset SSH password from inside the server:
+2. Note the **VNC Info** address (e.g., `38.242.158.108:63101`)
+3. **Set VNC password** (if not set):
+   - Click **"Set password"** button in VNC Control pop-up
+   - Enter a password for VNC access
+   - Click **"Confirm"**
+4. **Connect via VNC client:**
+   
+   **On Mac:**
+   - Download **RealVNC Viewer** or **TightVNC Viewer**
+   - Or use built-in **Screen Sharing** app:
+     - Open Finder → Go → Connect to Server (Cmd+K)
+     - Enter: `vnc://38.242.158.108:63101`
+     - Click Connect
+   
+   **On Windows:**
+   - Download **TightVNC Viewer** or **RealVNC Viewer**
+   - Open the VNC client
+   - Enter server: `38.242.158.108:63101`
+   - Click Connect
+   
+   **On Linux:**
+   - Install: `sudo apt install remmina` or `sudo apt install tigervnc-viewer`
+   - Connect to: `38.242.158.108:63101`
+   
+   **Or use browser-based VNC:**
+   - Try: `https://38.242.158.108:63101` in your browser
+   - Or use: https://novnc.com/noVNC/vnc.html?host=38.242.158.108&port=63101
+
+5. **Login via VNC:**
+   - Enter username: `root`
+   - Enter password: (your VPS root password or VNC password you just set)
+   
+6. **Reset SSH password from inside the server:**
    ```bash
    passwd root
    # Enter new password twice
    ```
+   
+7. **Then try SSH again** with the new password
 
 #### Solution 4: Check if SSH is Enabled
 Some Contabo VPS might have SSH disabled initially. Use VNC to enable it:
