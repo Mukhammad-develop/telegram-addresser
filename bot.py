@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 import shutil
+import sqlite3
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -85,6 +86,55 @@ class TelegramForwarder:
         self.backfill_trigger_file = Path("trigger_backfill.flag")
         
         self.logger.info("TelegramForwarder initialized")
+    
+    def _check_and_clear_session_lock(self, max_wait: int = 30) -> bool:
+        """
+        Check if session database is locked and wait for it to clear.
+        
+        Args:
+            max_wait: Maximum seconds to wait for lock to clear
+            
+        Returns:
+            True if lock is clear, False if still locked after max_wait
+        """
+        session_file = Path(f"{self.session_name}.session")
+        if not session_file.exists():
+            return True
+        
+        self.logger.info(f"🔍 Checking session file lock: {session_file}")
+        
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            try:
+                # Try to open the database in exclusive mode
+                conn = sqlite3.connect(str(session_file), timeout=1.0)
+                conn.execute("BEGIN EXCLUSIVE")
+                conn.execute("COMMIT")
+                conn.close()
+                self.logger.info("✅ Session file is unlocked")
+                return True
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e).lower():
+                    elapsed = time.time() - start_time
+                    if elapsed < max_wait:
+                        self.logger.warning(
+                            f"⏳ Session file is locked, waiting... ({elapsed:.1f}s/{max_wait}s)"
+                        )
+                        time.sleep(2)
+                    else:
+                        self.logger.error(
+                            f"❌ Session file still locked after {max_wait}s. "
+                            f"This usually means another process is using it or a previous crash left it locked."
+                        )
+                        return False
+                else:
+                    # Other database error, assume it's OK
+                    return True
+            except Exception as e:
+                self.logger.warning(f"Unexpected error checking session lock: {e}")
+                return True
+        
+        return False
     
     def _load_backfill_tracking(self) -> Set[str]:
         """Load backfill tracking from file."""
@@ -213,8 +263,50 @@ class TelegramForwarder:
     
     async def start(self) -> None:
         """Start the bot and set up event handlers."""
-        await self.client.start()
-        self.logger.info("Bot started successfully")
+        # Check for database lock before starting
+        if not self._check_and_clear_session_lock():
+            raise RuntimeError(
+                f"Session database is locked. This usually means:\n"
+                f"1. Another instance of the bot is running with the same session\n"
+                f"2. A previous crash left the database locked\n"
+                f"3. Multiple workers are trying to use the same session file\n\n"
+                f"Solutions:\n"
+                f"- Stop all running bot instances\n"
+                f"- Wait a few minutes for the lock to clear\n"
+                f"- If using multi-worker mode, ensure each worker has a unique session_name\n"
+                f"- As a last resort, delete {self.session_name}.session and re-authenticate"
+            )
+        
+        # Connect with retry logic for database lock errors
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                await self.client.start()
+                self.logger.info("Bot started successfully")
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if "database is locked" in error_str or "operationalerror" in error_str:
+                    if attempt < max_retries - 1:
+                        self.logger.warning(
+                            f"⚠️ Database lock detected (attempt {attempt + 1}/{max_retries}). "
+                            f"Waiting {retry_delay}s before retry..."
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        self.logger.error(
+                            f"❌ Failed to start after {max_retries} attempts due to database lock"
+                        )
+                        raise RuntimeError(
+                            f"Session database is locked after {max_retries} attempts. "
+                            f"Please stop all running instances and try again."
+                        ) from e
+                else:
+                    # Re-raise non-lock errors immediately
+                    raise
         
         # Get source channels
         channel_pairs = self.config_manager.get_channel_pairs()

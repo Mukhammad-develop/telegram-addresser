@@ -56,7 +56,12 @@ class WorkerProcess:
 
 def run_worker(worker_id: str, worker_config: Dict):
     """Run a single worker in its own process."""
+    logger = None
     try:
+        # Set up logger for this worker
+        from src.logger_setup import setup_logger
+        logger = setup_logger(f"Worker-{worker_id}", log_file=f"logs/worker_{worker_id}.log")
+        
         # Create a custom config file for this worker
         worker_config_path = f"worker_{worker_id}_config.json"
         
@@ -94,10 +99,31 @@ def run_worker(worker_id: str, worker_config: Dict):
         asyncio.run(bot.start())
         
     except KeyboardInterrupt:
+        if logger:
+            logger.info("Worker stopped by user")
         pass
+    except RuntimeError as e:
+        # Handle database lock errors specifically
+        error_msg = str(e).lower()
+        if "database is locked" in error_msg or "session database is locked" in error_msg:
+            if logger:
+                logger.error(
+                    f"❌ Worker {worker_id} failed: Database lock error\n"
+                    f"This usually means:\n"
+                    f"1. Another process is using the same session file\n"
+                    f"2. A previous crash left the database locked\n"
+                    f"3. Multiple workers are sharing the same session_name\n\n"
+                    f"Solution: Stop all workers, wait 1-2 minutes, then restart."
+                )
+            # Don't re-raise, let the worker manager handle restart logic
+            return
+        else:
+            if logger:
+                logger.error(f"Worker {worker_id} crashed: {e}")
+            raise
     except Exception as e:
-        logger = logging.getLogger(f"Worker-{worker_id}")
-        logger.error(f"Worker {worker_id} crashed: {e}")
+        if logger:
+            logger.error(f"Worker {worker_id} crashed: {e}", exc_info=True)
         raise
 
 
@@ -166,13 +192,24 @@ class WorkerManager:
                             f"⚠️ Worker {worker_id} is dead (restarts: {worker.restart_count})"
                         )
                         
+                        # Check if worker exited due to database lock
+                        # (This is a heuristic - we check if it crashed quickly)
+                        if worker.start_time and (time.time() - worker.start_time) < 10:
+                            self.logger.warning(
+                                f"⚠️ Worker {worker_id} crashed quickly - possible database lock issue. "
+                                f"Waiting 30 seconds before restart to allow lock to clear..."
+                            )
+                            time.sleep(30)  # Wait longer for database lock to clear
+                        
                         # Auto-restart if not too many restarts
                         if worker.restart_count < 5:
                             self.logger.info(f"🔄 Restarting worker {worker_id}...")
                             worker.restart()
                         else:
                             self.logger.error(
-                                f"❌ Worker {worker_id} failed too many times, not restarting"
+                                f"❌ Worker {worker_id} failed too many times, not restarting. "
+                                f"This may be due to a persistent database lock. "
+                                f"Please stop all workers, wait 1-2 minutes, then manually restart."
                             )
                 
                 time.sleep(10)  # Check every 10 seconds
