@@ -2037,8 +2037,11 @@ def process_auth_phone(message):
     phone = message.text.strip()
     data = temp_storage.get(message.chat.id, {})
     
-    if not data:
-        bot.send_message(message.chat.id, "❌ Session expired. Please try again.")
+    # Validate required keys
+    required_keys = ["auth_worker_id", "auth_api_id", "auth_api_hash", "auth_session_name"]
+    if not data or not all(key in data for key in required_keys):
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Session expired or invalid. Please restart authentication from Workers menu.")
         return
     
     worker_id = data["auth_worker_id"]
@@ -2053,8 +2056,15 @@ def process_auth_phone(message):
     
     # Run async authentication
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Get or create event loop
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         
         client = TelegramClient(session_name, api_id, api_hash)
         
@@ -2073,12 +2083,29 @@ def process_auth_phone(message):
                 
                 return result.phone_code_hash
             finally:
-                # Always disconnect
+                # Always disconnect and save session
                 if client.is_connected():
                     await client.disconnect()
         
         phone_code_hash = loop.run_until_complete(send_code())
-        loop.close()
+        
+        # Clean up event loop properly
+        try:
+            # Cancel all pending tasks (if available)
+            try:
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except (AttributeError, RuntimeError):
+                # all_tasks() not available or no tasks
+                pass
+        except Exception:
+            pass
+        finally:
+            if not loop.is_closed():
+                loop.close()
         
         # Store for next step
         temp_storage[message.chat.id]["auth_phone_code_hash"] = phone_code_hash
@@ -2159,8 +2186,11 @@ def process_auth_code(message):
     code = message.text.strip()
     data = temp_storage.get(message.chat.id, {})
     
-    if not data:
-        bot.send_message(message.chat.id, "❌ Session expired. Please try again.")
+    # Validate required keys
+    required_keys = ["auth_worker_id", "auth_api_id", "auth_api_hash", "auth_session_name", "auth_phone", "auth_phone_code_hash"]
+    if not data or not all(key in data for key in required_keys):
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Session expired or invalid. Please restart authentication from Workers menu.")
         return
     
     worker_id = data["auth_worker_id"]
@@ -2174,8 +2204,15 @@ def process_auth_code(message):
     
     # Run async sign in
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Get or create event loop
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         
         client = TelegramClient(session_name, api_id, api_hash)
         
@@ -2189,6 +2226,8 @@ def process_auth_code(message):
                 try:
                     result = await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
                     me = await client.get_me()
+                    # Ensure session is saved before disconnecting
+                    await asyncio.sleep(0.5)  # Give Telethon time to save session
                     return True, me, None
                 except SessionPasswordNeededError:
                     return False, None, "2FA required"
@@ -2197,11 +2236,29 @@ def process_auth_code(message):
                 except Exception as e:
                     return False, None, str(e)
             finally:
+                # Always disconnect and save session
                 if client.is_connected():
                     await client.disconnect()
         
         success, me, error = loop.run_until_complete(sign_in())
-        loop.close()
+        
+        # Clean up event loop properly
+        try:
+            # Cancel all pending tasks (if available)
+            try:
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except (AttributeError, RuntimeError):
+                # all_tasks() not available or no tasks
+                pass
+        except Exception:
+            pass
+        finally:
+            if not loop.is_closed():
+                loop.close()
         
         if success:
             # Authentication complete!
@@ -2260,8 +2317,11 @@ def process_auth_2fa(message):
     password = message.text.strip()
     data = temp_storage.get(message.chat.id, {})
     
-    if not data:
-        bot.send_message(message.chat.id, "❌ Session expired. Please try again.")
+    # Validate required keys
+    required_keys = ["auth_worker_id", "auth_api_id", "auth_api_hash", "auth_session_name"]
+    if not data or not all(key in data for key in required_keys):
+        temp_storage.pop(message.chat.id, None)
+        bot.send_message(message.chat.id, "❌ Session expired or invalid. Please restart authentication from Workers menu.")
         return
     
     worker_id = data["auth_worker_id"]
@@ -2273,8 +2333,15 @@ def process_auth_2fa(message):
     
     # Run async 2FA check
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Get or create event loop
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         
         client = TelegramClient(session_name, api_id, api_hash)
         
@@ -2288,15 +2355,35 @@ def process_auth_2fa(message):
                 try:
                     await client.sign_in(password=password)
                     me = await client.get_me()
+                    # Ensure session is saved before disconnecting
+                    await asyncio.sleep(0.5)  # Give Telethon time to save session
                     return True, me, None
                 except Exception as e:
                     return False, None, str(e)
             finally:
+                # Always disconnect and save session
                 if client.is_connected():
                     await client.disconnect()
         
         success, me, error = loop.run_until_complete(check_password())
-        loop.close()
+        
+        # Clean up event loop properly
+        try:
+            # Cancel all pending tasks (if available)
+            try:
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except (AttributeError, RuntimeError):
+                # all_tasks() not available or no tasks
+                pass
+        except Exception:
+            pass
+        finally:
+            if not loop.is_closed():
+                loop.close()
         
         if success:
             # Authentication complete!
