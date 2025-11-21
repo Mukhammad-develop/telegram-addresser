@@ -26,9 +26,15 @@ from src.logger_setup import setup_logger, get_logger
 class TelegramForwarder:
     """Main forwarder bot class."""
     
-    def __init__(self, config_path: str = "config.json"):
+    def __init__(self, config_path_or_dict = "config.json"):
+        """
+        Initialize TelegramForwarder.
+        
+        Args:
+            config_path_or_dict: Either a file path (str) or a config dict.
+        """
         # Load configuration
-        self.config_manager = ConfigManager(config_path)
+        self.config_manager = ConfigManager(config_path_or_dict)
         self.config = self.config_manager.load()
         
         # Set up logging

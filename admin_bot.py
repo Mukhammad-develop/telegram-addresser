@@ -1636,7 +1636,7 @@ def confirm_remove_worker(call):
                 session_journal.unlink()
                 files_deleted.append(f"{session_name}.session-journal")
         
-        # 2. Delete temp worker config
+        # 2. Delete temp worker config (no longer created, but check for old files)
         temp_config = Path(f"worker_{worker_id}_config.json")
         if temp_config.exists():
             temp_config.unlink()

@@ -62,10 +62,7 @@ def run_worker(worker_id: str, worker_config: Dict):
         from src.logger_setup import setup_logger
         logger = setup_logger(f"Worker-{worker_id}", log_file=f"logs/worker_{worker_id}.log")
         
-        # Create a custom config file for this worker
-        worker_config_path = f"worker_{worker_id}_config.json"
-        
-        # Build worker-specific config
+        # Build worker-specific config dict (no file needed!)
         config_data = {
             "api_credentials": {
                 "api_id": worker_config["api_id"],
@@ -90,12 +87,8 @@ def run_worker(worker_id: str, worker_config: Dict):
             })
         }
         
-        # Save worker config
-        with open(worker_config_path, 'w') as f:
-            json.dump(config_data, f, indent=2)
-        
-        # Run the forwarder bot
-        bot = TelegramForwarder(worker_config_path)
+        # Run the forwarder bot with config dict directly (no file created!)
+        bot = TelegramForwarder(config_data)
         asyncio.run(bot.start())
         
     except KeyboardInterrupt:

@@ -8,15 +8,34 @@ import threading
 class ConfigManager:
     """Thread-safe configuration manager."""
     
-    def __init__(self, config_path: str = "config.json"):
-        self.config_path = config_path
+    def __init__(self, config_path_or_dict = "config.json"):
+        """
+        Initialize ConfigManager.
+        
+        Args:
+            config_path_or_dict: Either a file path (str) or a config dict.
+                                 If dict, it's used directly without file I/O.
+        """
+        self.config_path = None
         self.config: Dict[str, Any] = {}
         self._lock = threading.RLock()  # Use RLock instead of Lock for reentrant locking
-        self.load()
+        
+        # Check if it's a dict or a file path
+        if isinstance(config_path_or_dict, dict):
+            # Use dict directly, no file I/O
+            self.config = config_path_or_dict
+        else:
+            # It's a file path
+            self.config_path = config_path_or_dict
+            self.load()
     
     def load(self) -> Dict[str, Any]:
         """Load configuration from JSON file."""
         with self._lock:
+            if self.config_path is None:
+                # Using dict mode, no file to load
+                return self.config
+                
             if not os.path.exists(self.config_path):
                 self._create_default_config()
             
@@ -28,6 +47,9 @@ class ConfigManager:
     def save(self) -> None:
         """Save configuration to JSON file."""
         with self._lock:
+            if self.config_path is None:
+                # Using dict mode, no file to save
+                return
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
     
@@ -55,8 +77,9 @@ class ConfigManager:
             }
         }
         
-        with open(self.config_path, 'w', encoding='utf-8') as f:
-            json.dump(default_config, f, indent=2, ensure_ascii=False)
+        if self.config_path:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(default_config, f, indent=2, ensure_ascii=False)
         
         self.config = default_config
     
