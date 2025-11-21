@@ -2056,13 +2056,14 @@ def process_auth_phone(message):
     
     # Run async authentication
     try:
-        # Get or create event loop
+        # Create new event loop (get_event_loop() is deprecated when no loop exists)
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+            loop = asyncio.get_running_loop()
+            # If we get here, there's already a running loop - create a new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         except RuntimeError:
+            # No running loop, create new one
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
