@@ -348,8 +348,8 @@ class TelegramForwarder:
                 source_entity = await self.client.get_entity(pair["source"])
                 target_entity = await self.client.get_entity(pair["target"])
                 self.logger.info(
-                    f"✓ Access verified: {getattr(source_entity, 'title', 'Channel')} → "
-                    f"{getattr(target_entity, 'title', 'Channel')}"
+                    f"✓ Access verified: {pair['source']} ({getattr(source_entity, 'title', 'Channel')}) → "
+                    f"{pair['target']} ({getattr(target_entity, 'title', 'Channel')})"
                 )
             except ValueError as e:
                 self.logger.error(
@@ -366,6 +366,18 @@ class TelegramForwarder:
         # Track which channels are registered
         self.registered_source_channels = set(source_channels)
         self.logger.info(f"📡 Event handler registered for {len(self.registered_source_channels)} source channel(s)")
+        self.logger.info(f"📡 Monitoring channel IDs: {source_channels}")
+        
+        # Test: Fetch latest message from each source to confirm bot can read them
+        for source_id in source_channels:
+            try:
+                messages = await self.client.get_messages(source_id, limit=1)
+                if messages:
+                    self.logger.info(f"✓ Can read latest message from {source_id} (msg ID: {messages[0].id})")
+                else:
+                    self.logger.warning(f"⚠️  No messages found in {source_id}")
+            except Exception as e:
+                self.logger.error(f"❌ Cannot read messages from {source_id}: {type(e).__name__}: {e}")
         
         # Backfill recent messages for NEW channel pairs only (to avoid duplicates)
         self.logger.info(f"📋 Checking backfill status for {len(channel_pairs)} channel pair(s)")
