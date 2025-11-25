@@ -68,6 +68,9 @@ class TelegramForwarder:
         # Track processed media groups to avoid duplicates
         self.processed_groups: Set[int] = set()
         
+        # Track registered source channels for event handler
+        self.registered_source_channels: Set[int] = set()
+        
         # Map source message IDs to target message IDs for reply preservation
         # Key: f"{source_channel_id}:{source_msg_id}" -> Value: target_msg_id
         self.message_id_map: Dict[str, int] = {}
@@ -235,6 +238,22 @@ class TelegramForwarder:
                         
                         self.logger.info(f"✅ Auto-backfill completed for: {pair['source']} -> {pair['target']}")
             
+            # Check if we need to update event handler for new source channels
+            if new_pairs_found:
+                current_sources = set(pair["source"] for pair in channel_pairs if pair.get("enabled", True))
+                new_sources = current_sources - self.registered_source_channels
+                
+                if new_sources:
+                    self.logger.info(f"🔄 Detected {len(new_sources)} new source channel(s), updating event handler...")
+                    
+                    # Re-register event handler with ALL source channels (old + new)
+                    @self.client.on(events.NewMessage(chats=list(current_sources)))
+                    async def handler(event):
+                        await self.handle_new_message(event)
+                    
+                    self.registered_source_channels = current_sources
+                    self.logger.info(f"✅ Event handler updated! Now monitoring {len(self.registered_source_channels)} source channel(s)")
+            
             if not new_pairs_found:
                 self.logger.info("ℹ️ No new pairs detected for backfill")
                 
@@ -343,6 +362,10 @@ class TelegramForwarder:
         @self.client.on(events.NewMessage(chats=source_channels))
         async def handler(event):
             await self.handle_new_message(event)
+        
+        # Track which channels are registered
+        self.registered_source_channels = set(source_channels)
+        self.logger.info(f"📡 Event handler registered for {len(self.registered_source_channels)} source channel(s)")
         
         # Backfill recent messages for NEW channel pairs only (to avoid duplicates)
         self.logger.info(f"📋 Checking backfill status for {len(channel_pairs)} channel pair(s)")
