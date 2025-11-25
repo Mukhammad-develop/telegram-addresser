@@ -61,6 +61,9 @@ def run_worker(worker_id: str, worker_config: Dict):
         # Set up logger for this worker
         from src.logger_setup import setup_logger
         logger = setup_logger(f"Worker-{worker_id}", log_file=f"logs/worker_{worker_id}.log")
+        logger.info(f"=" * 60)
+        logger.info(f"🚀 Starting worker: {worker_id}")
+        logger.info(f"=" * 60)
         
         # Build worker-specific config dict (no file needed!)
         config_data = {

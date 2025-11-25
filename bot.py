@@ -414,58 +414,69 @@ class TelegramForwarder:
         Args:
             event: Telethon NewMessage event
         """
-        # Track timing for delay analysis
-        import time as time_module
-        start_time = time_module.time()
-        
-        message = event.message
-        source_chat_id = event.chat_id
-        
-        self.logger.info(f"⏱️ [TIMING] Message {message.id} received at {start_time}")
-        
-        # Check if this message is part of a media group we've already processed
-        if message.grouped_id:
-            if message.grouped_id in self.processed_groups:
-                self.logger.debug(
-                    f"Skipping message {message.id} - already processed as part of group {message.grouped_id}"
-                )
-                return
-            # Mark this group as processed
-            self.processed_groups.add(message.grouped_id)
+        try:
+            # Track timing for delay analysis
+            import time as time_module
+            start_time = time_module.time()
             
-            # Clean up old group IDs (keep only last 100)
-            if len(self.processed_groups) > 100:
-                # Remove oldest entries
-                sorted_groups = sorted(self.processed_groups)
-                self.processed_groups = set(sorted_groups[-100:])
+            message = event.message
+            source_chat_id = event.chat_id
+            
+            self.logger.info(f"⏱️ [TIMING] Message {message.id} received from {source_chat_id} at {start_time}")
+            
+            # Check if this message is part of a media group we've already processed
+            if message.grouped_id:
+                if message.grouped_id in self.processed_groups:
+                    self.logger.debug(
+                        f"Skipping message {message.id} - already processed as part of group {message.grouped_id}"
+                    )
+                    return
+                # Mark this group as processed
+                self.processed_groups.add(message.grouped_id)
+                
+                # Clean up old group IDs (keep only last 100)
+                if len(self.processed_groups) > 100:
+                    # Remove oldest entries
+                    sorted_groups = sorted(self.processed_groups)
+                    self.processed_groups = set(sorted_groups[-100:])
+            
+            # Find target channel(s) for this source
+            channel_pairs = self.config_manager.get_channel_pairs()
+            targets = [
+                pair["target"] 
+                for pair in channel_pairs 
+                if pair["source"] == source_chat_id
+            ]
+            
+            if not targets:
+                self.logger.debug(f"No target channel configured for source {source_chat_id}")
+                return
+            
+            self.logger.info(f"📨 Processing message {message.id} from {source_chat_id} -> {targets}")
+            
+            # Get message text (from message or caption)
+            text = message.text or message.message or ""
+            
+            # Check filters
+            filters = self.config_manager.get_filters()
+            if not self.text_processor.should_forward_message(text, filters):
+                self.logger.debug(f"Message {message.id} filtered out")
+                return
+            
+            # Forward to all target channels
+            for target in targets:
+                forward_start = time_module.time()
+                await self.forward_message_with_retry(message, source_chat_id, target)
+                forward_end = time_module.time()
+                forward_duration = forward_end - start_time
+                self.logger.info(f"⏱️ [TIMING] Message {message.id} forwarded in {forward_duration:.2f}s (processing time: {forward_end - forward_start:.2f}s)")
         
-        # Find target channel(s) for this source
-        channel_pairs = self.config_manager.get_channel_pairs()
-        targets = [
-            pair["target"] 
-            for pair in channel_pairs 
-            if pair["source"] == source_chat_id
-        ]
-        
-        if not targets:
-            return
-        
-        # Get message text (from message or caption)
-        text = message.text or message.message or ""
-        
-        # Check filters
-        filters = self.config_manager.get_filters()
-        if not self.text_processor.should_forward_message(text, filters):
-            self.logger.debug(f"Message {message.id} filtered out")
-            return
-        
-        # Forward to all target channels
-        for target in targets:
-            forward_start = time_module.time()
-            await self.forward_message_with_retry(message, source_chat_id, target)
-            forward_end = time_module.time()
-            forward_duration = forward_end - start_time
-            self.logger.info(f"⏱️ [TIMING] Message {message.id} forwarded in {forward_duration:.2f}s (processing time: {forward_end - forward_start:.2f}s)")
+        except Exception as e:
+            self.logger.error(
+                f"❌ Error in handle_new_message for message {getattr(event.message, 'id', 'unknown')}: "
+                f"{type(e).__name__}: {e}", 
+                exc_info=True
+            )
     
     async def forward_message_with_retry(
         self, 
