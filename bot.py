@@ -269,10 +269,13 @@ class TelegramForwarder:
                 if new_sources:
                     self.logger.info(f"🔄 Detected {len(new_sources)} new source channel(s), updating event handler...")
                     
-                    # Re-register event handler with ALL source channels (old + new)
-                    @self.client.on(events.NewMessage(chats=list(current_sources)))
-                    async def handler(event):
-                        await self.handle_new_message(event)
+                    # Remove old handler and add new one with ALL source channels (old + new)
+                    # Note: We can't easily remove the old handler, so we'll just add a new one
+                    # Telethon will handle multiple handlers for the same event
+                    self.client.add_event_handler(
+                        self.handle_new_message,
+                        events.NewMessage(chats=list(current_sources))
+                    )
                     
                     self.registered_source_channels = current_sources
                     self.logger.info(f"✅ Event handler updated! Now monitoring {len(self.registered_source_channels)} source channel(s)")
@@ -288,8 +291,8 @@ class TelegramForwarder:
         Monitor channels to detect if Telegram stops sending updates.
         This is a known issue where channels get "stuck" and stop receiving live messages.
         """
-        # Wait for initial startup to complete
-        await asyncio.sleep(120)  # Wait 2 minutes before first check
+        # Wait for initial startup and backfill to complete
+        await asyncio.sleep(300)  # Wait 5 minutes before first check (to avoid false alarms during backfill)
         
         while True:
             try:
@@ -435,9 +438,11 @@ class TelegramForwarder:
                 continue
         
         # Register event handler for new messages
-        @self.client.on(events.NewMessage(chats=source_channels))
-        async def handler(event):
-            await self.handle_new_message(event)
+        # Use add_event_handler instead of decorator for better subprocess compatibility
+        self.client.add_event_handler(
+            self.handle_new_message,
+            events.NewMessage(chats=source_channels)
+        )
         
         # Track which channels are registered
         self.registered_source_channels = set(source_channels)
