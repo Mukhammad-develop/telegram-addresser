@@ -267,18 +267,12 @@ class TelegramForwarder:
                 new_sources = current_sources - self.registered_source_channels
                 
                 if new_sources:
-                    self.logger.info(f"🔄 Detected {len(new_sources)} new source channel(s), updating event handler...")
+                    self.logger.info(f"🔄 Detected {len(new_sources)} new source channel(s), updating filter...")
                     
-                    # Remove old handler and add new one with ALL source channels (old + new)
-                    # Note: We can't easily remove the old handler, so we'll just add a new one
-                    # Telethon will handle multiple handlers for the same event
-                    self.client.add_event_handler(
-                        self.handle_new_message,
-                        events.NewMessage(chats=list(current_sources))
-                    )
-                    
+                    # Just update the registered channels set
+                    # Since we're listening to ALL messages, we only need to update the filter
                     self.registered_source_channels = current_sources
-                    self.logger.info(f"✅ Event handler updated! Now monitoring {len(self.registered_source_channels)} source channel(s)")
+                    self.logger.info(f"✅ Filter updated! Now monitoring {len(self.registered_source_channels)} source channel(s)")
             
             if not new_pairs_found:
                 self.logger.info("ℹ️ No new pairs detected for backfill")
@@ -437,16 +431,17 @@ class TelegramForwarder:
                 )
                 continue
         
-        # Register event handler for new messages
-        # Use add_event_handler instead of decorator for better subprocess compatibility
+        # Register event handler for ALL new messages (no filter)
+        # Filtering at registration time can cause issues with non-admin channels
+        # We'll filter inside the handler instead
         self.client.add_event_handler(
             self.handle_new_message,
-            events.NewMessage(chats=source_channels)
+            events.NewMessage()
         )
         
-        # Track which channels are registered
+        # Track which channels are registered for filtering in handler
         self.registered_source_channels = set(source_channels)
-        self.logger.info(f"📡 Event handler registered for {len(self.registered_source_channels)} source channel(s)")
+        self.logger.info(f"📡 Event handler registered for ALL messages (will filter for {len(self.registered_source_channels)} source channel(s))")
         self.logger.info(f"📡 Monitoring channel IDs: {source_channels}")
         
         # Test: Fetch latest message from each source to confirm bot can read them
@@ -525,6 +520,11 @@ class TelegramForwarder:
             
             message = event.message
             source_chat_id = event.chat_id
+            
+            # Filter: Only process messages from registered source channels
+            if source_chat_id not in self.registered_source_channels:
+                # Ignore messages from channels we're not monitoring
+                return
             
             # Track this message for heartbeat monitoring
             self.last_received_msg_ids[source_chat_id] = message.id
