@@ -91,8 +91,17 @@ def run_worker(worker_id: str, worker_config: Dict):
         }
         
         # Run the forwarder bot with config dict directly (no file created!)
+        # CRITICAL: Explicitly create and set event loop for subprocess
+        # asyncio.run() doesn't work well with Telethon in multiprocessing
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         bot = TelegramForwarder(config_data)
-        asyncio.run(bot.start())
+        
+        try:
+            loop.run_until_complete(bot.start())
+        finally:
+            loop.close()
         
     except KeyboardInterrupt:
         if logger:
