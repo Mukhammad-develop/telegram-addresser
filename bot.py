@@ -713,12 +713,15 @@ class TelegramForwarder:
                             if not group_text_was_modified and caption_msg and hasattr(caption_msg, 'entities'):
                                 formatting_entities = caption_msg.entities
                             
+                            # For media groups, Telethon will auto-detect video/photo types
+                            # But we can pass force_document=False to ensure proper handling
                             sent_msg = await self.client.send_file(
                                 target,
                                 media_files,
                                 caption=group_text if group_text else None,
                                 reply_to=reply_to,
-                                formatting_entities=formatting_entities
+                                formatting_entities=formatting_entities,
+                                force_document=False
                             )
                             
                             # Store message ID mapping for reply chains
@@ -808,12 +811,21 @@ class TelegramForwarder:
                             if not text_was_modified and hasattr(message, 'entities'):
                                 formatting_entities = message.entities
                             
+                            # Extract media attributes from original message to preserve video/photo properties
+                            attributes = None
+                            force_document = False
+                            if hasattr(message.media, 'document') and message.media.document:
+                                # This is a document (video, gif, etc.) - preserve attributes
+                                attributes = message.media.document.attributes
+                            
                             sent_msg = await self.client.send_file(
                                 target,
                                 file_path,
                                 caption=text if text else None,
                                 reply_to=reply_to,
-                                formatting_entities=formatting_entities
+                                formatting_entities=formatting_entities,
+                                attributes=attributes,
+                                force_document=force_document
                             )
                             
                             # Store message ID mapping for reply chains
@@ -835,19 +847,21 @@ class TelegramForwarder:
                             raise Exception("Download returned None")
                     
                     except Exception as download_error:
-                        # If download fails, try direct send
+                        # If download fails, try direct send with original media
                         self.logger.warning(f"Download failed, trying direct send: {download_error}")
                         # Preserve entities ONLY if text wasn't modified
                         formatting_entities = None
                         if not text_was_modified and hasattr(message, 'entities'):
                             formatting_entities = message.entities
                         
-                        await self.client.send_message(
+                        # Use send_file for better media handling instead of send_message
+                        await self.client.send_file(
                             target,
-                            text if text else None,
-                            file=message.media,
+                            message.media,
+                            caption=text if text else None,
                             reply_to=reply_to,
-                            formatting_entities=formatting_entities
+                            formatting_entities=formatting_entities,
+                            force_document=False
                         )
                     finally:
                         # Ensure cleanup even if send fails
