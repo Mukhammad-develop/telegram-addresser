@@ -521,9 +521,13 @@ class TelegramForwarder:
             message = event.message
             source_chat_id = event.chat_id
             
+            # DEBUG: Log ALL received messages to verify event handler is working
+            self.logger.info(f"🔔 [DEBUG] Event handler triggered: msg {message.id} from {source_chat_id}")
+            
             # Filter: Only process messages from registered source channels
             if source_chat_id not in self.registered_source_channels:
                 # Ignore messages from channels we're not monitoring
+                self.logger.info(f"⏭️  [DEBUG] Skipping message from unmonitored channel: {source_chat_id}")
                 return
             
             # Track this message for heartbeat monitoring
