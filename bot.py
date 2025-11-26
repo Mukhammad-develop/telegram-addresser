@@ -180,6 +180,29 @@ class TelegramForwarder:
                     return True
         return False
     
+    async def _run_backfill_tasks(self, pairs_to_backfill: list) -> None:
+        """
+        Run backfill tasks in the background without blocking live message processing.
+        
+        Args:
+            pairs_to_backfill: List of tuples (pair, backfill_count, pair_key)
+        """
+        for pair, backfill_count, pair_key in pairs_to_backfill:
+            try:
+                self.logger.info(f"🔄 NEW PAIR DETECTED - Starting backfill: {pair['source']} -> {pair['target']}")
+                await self.backfill_messages(pair["source"], pair["target"], backfill_count)
+                # Mark as backfilled
+                self.backfilled_pairs.add(pair_key)
+                self._save_backfill_tracking()
+                self.logger.info(f"✅ Backfill completed and tracked for: {pair_key}")
+                
+                # Small delay between backfills to prevent rate limiting
+                await asyncio.sleep(1)
+            except Exception as e:
+                self.logger.error(f"❌ Backfill failed for {pair['source']} -> {pair['target']}: {e}", exc_info=True)
+        
+        self.logger.info("🎉 All background backfill tasks completed!")
+    
     async def _check_and_backfill_new_pairs(self) -> None:
         """Check for new channel pairs and backfill them automatically."""
         try:
@@ -218,6 +241,7 @@ class TelegramForwarder:
                 channel_pairs = self.config_manager.get_channel_pairs()
             
             new_pairs_found = False
+            pairs_to_backfill = []
             
             for pair in channel_pairs:
                 backfill_count = pair.get("backfill_count", 0)
@@ -227,16 +251,12 @@ class TelegramForwarder:
                     # Check if this is a new pair that hasn't been backfilled
                     if pair_key not in self.backfilled_pairs:
                         new_pairs_found = True
-                        self.logger.info(f"🆕 Auto-detected NEW pair, starting backfill: {pair['source']} -> {pair['target']}")
-                        
-                        # Backfill the new pair
-                        await self.backfill_messages(pair["source"], pair["target"], backfill_count)
-                        
-                        # Mark as backfilled
-                        self.backfilled_pairs.add(pair_key)
-                        self._save_backfill_tracking()
-                        
-                        self.logger.info(f"✅ Auto-backfill completed for: {pair['source']} -> {pair['target']}")
+                        pairs_to_backfill.append((pair, backfill_count, pair_key))
+                        self.logger.info(f"🆕 Auto-detected NEW pair: {pair['source']} -> {pair['target']}")
+            
+            # Run backfill as background task to avoid blocking live messages
+            if pairs_to_backfill:
+                asyncio.create_task(self._run_backfill_tasks(pairs_to_backfill))
             
             # Check if we need to update event handler for new source channels
             if new_pairs_found:
@@ -380,9 +400,12 @@ class TelegramForwarder:
                 self.logger.error(f"❌ Cannot read messages from {source_id}: {type(e).__name__}: {e}")
         
         # Backfill recent messages for NEW channel pairs only (to avoid duplicates)
+        # Run backfill as a background task so it doesn't block live message processing
         self.logger.info(f"📋 Checking backfill status for {len(channel_pairs)} channel pair(s)")
         self.logger.info(f"📋 Currently tracked as backfilled: {list(self.backfilled_pairs)}")
         
+        # Collect pairs that need backfill
+        pairs_to_backfill = []
         for pair in channel_pairs:
             backfill_count = pair.get("backfill_count", 0)
             pair_key = self._get_pair_key(pair["source"], pair["target"])
@@ -391,16 +414,16 @@ class TelegramForwarder:
             
             if backfill_count > 0:
                 if pair_key not in self.backfilled_pairs:
-                    self.logger.info(f"🔄 NEW PAIR DETECTED - Starting backfill: {pair['source']} -> {pair['target']}")
-                    await self.backfill_messages(pair["source"], pair["target"], backfill_count)
-                    # Mark as backfilled
-                    self.backfilled_pairs.add(pair_key)
-                    self._save_backfill_tracking()
-                    self.logger.info(f"✅ Backfill completed and tracked for: {pair_key}")
+                    pairs_to_backfill.append((pair, backfill_count, pair_key))
                 else:
                     self.logger.info(f"⏭️  SKIPPING - Pair already backfilled: {pair['source']} -> {pair['target']}")
             else:
                 self.logger.info(f"⏭️  SKIPPING - backfill_count is 0 for: {pair['source']} -> {pair['target']}")
+        
+        # Start backfill as background task if needed
+        if pairs_to_backfill:
+            self.logger.info(f"🔄 Starting background backfill for {len(pairs_to_backfill)} pair(s)...")
+            asyncio.create_task(self._run_backfill_tasks(pairs_to_backfill))
         
         self.logger.info("Bot is now running. Press Ctrl+C to stop.")
         
