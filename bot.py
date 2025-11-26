@@ -71,6 +71,9 @@ class TelegramForwarder:
         # Track registered source channels for event handler
         self.registered_source_channels: Set[int] = set()
         
+        # Track last received message ID for each channel (for heartbeat monitoring)
+        self.last_received_msg_ids: Dict[int, int] = {}
+        
         # Map source message IDs to target message IDs for reply preservation
         # Key: f"{source_channel_id}:{source_msg_id}" -> Value: target_msg_id
         self.message_id_map: Dict[str, int] = {}
@@ -280,6 +283,59 @@ class TelegramForwarder:
         except Exception as e:
             self.logger.error(f"Error during auto-backfill check: {e}")
     
+    async def _monitor_channel_heartbeat(self) -> None:
+        """
+        Monitor channels to detect if Telegram stops sending updates.
+        This is a known issue where channels get "stuck" and stop receiving live messages.
+        """
+        # Wait for initial startup to complete
+        await asyncio.sleep(120)  # Wait 2 minutes before first check
+        
+        while True:
+            try:
+                channel_pairs = self.config_manager.get_channel_pairs()
+                source_channels = [pair["source"] for pair in channel_pairs if pair.get("enabled", True)]
+                
+                for source_id in source_channels:
+                    try:
+                        # Fetch latest message from channel
+                        messages = await self.client.get_messages(source_id, limit=1)
+                        if not messages:
+                            continue
+                        
+                        latest_msg_id = messages[0].id
+                        
+                        # Check if we have received this message via event handler
+                        last_received = self.last_received_msg_ids.get(source_id, 0)
+                        
+                        # If channel has new messages but we didn't receive them, update stream is stuck
+                        if latest_msg_id > last_received:
+                            missed_count = latest_msg_id - last_received
+                            if missed_count > 0:
+                                self.logger.error(
+                                    f"⚠️  HEARTBEAT WARNING: Channel {source_id} has {missed_count} new "
+                                    f"message(s) (last received: {last_received}, latest: {latest_msg_id}) "
+                                    f"but event handler did NOT receive them! "
+                                    f"This means Telegram's update stream is STUCK. "
+                                    f"SOLUTION: Restart the bot to re-establish the connection."
+                                )
+                        
+                    except Exception as e:
+                        self.logger.debug(f"Heartbeat check failed for {source_id}: {e}")
+                        continue
+                
+                # Wait 60 seconds before next check
+                await asyncio.sleep(60)
+                
+            except asyncio.CancelledError:
+                self.logger.info("💓 Channel heartbeat monitor stopped")
+                break
+            except Exception as e:
+                self.logger.error(f"Error in heartbeat monitor: {e}")
+                # Wait a bit before retrying
+                await asyncio.sleep(60)
+                continue
+    
     async def _monitor_backfill_trigger(self) -> None:
         """Monitor for backfill trigger file and process new pairs automatically."""
         while True:
@@ -427,18 +483,26 @@ class TelegramForwarder:
         
         self.logger.info("Bot is now running. Press Ctrl+C to stop.")
         
-        # Start background task to monitor for backfill triggers
+        # Start background tasks
         self.logger.info("🔍 Starting auto-backfill monitor (checks every 5 seconds)")
         monitor_task = asyncio.create_task(self._monitor_backfill_trigger())
+        
+        self.logger.info("💓 Starting channel heartbeat monitor (checks every 60 seconds)")
+        heartbeat_task = asyncio.create_task(self._monitor_channel_heartbeat())
         
         # Keep the bot running
         try:
             await self.client.run_until_disconnected()
         finally:
-            # Cancel monitor task on shutdown
+            # Cancel monitor tasks on shutdown
             monitor_task.cancel()
+            heartbeat_task.cancel()
             try:
                 await monitor_task
+            except asyncio.CancelledError:
+                pass
+            try:
+                await heartbeat_task
             except asyncio.CancelledError:
                 pass
     
@@ -456,6 +520,9 @@ class TelegramForwarder:
             
             message = event.message
             source_chat_id = event.chat_id
+            
+            # Track this message for heartbeat monitoring
+            self.last_received_msg_ids[source_chat_id] = message.id
             
             self.logger.info(f"⏱️ [TIMING] Message {message.id} received from {source_chat_id} at {start_time}")
             
