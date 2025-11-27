@@ -90,12 +90,12 @@ class TelegramForwarder:
         self.temp_media_dir = Path("temp_media")
         self.temp_media_dir.mkdir(exist_ok=True)
         
-        # Track which channel pairs have been backfilled to avoid duplicates
-        self.backfill_tracking_file = Path("backfill_tracking.json")
-        self.backfilled_pairs: Set[str] = self._load_backfill_tracking()
+        # Track last processed message ID for each channel (for polling mode)
+        self.last_processed_file = Path("last_processed.json")
+        self.last_processed_ids: Dict[int, int] = self._load_last_processed()
         
-        # File-based trigger for auto-backfill (created by admin bot)
-        self.backfill_trigger_file = Path("trigger_backfill.flag")
+        # File-based trigger for config reload (created by admin bot)
+        self.config_reload_trigger_file = Path("trigger_reload.flag")
         
         self.logger.info("TelegramForwarder initialized")
     
@@ -148,24 +148,27 @@ class TelegramForwarder:
         
         return False
     
-    def _load_backfill_tracking(self) -> Set[str]:
-        """Load backfill tracking from file."""
-        if self.backfill_tracking_file.exists():
+    def _load_last_processed(self) -> Dict[int, int]:
+        """Load last processed message IDs from file."""
+        if self.last_processed_file.exists():
             try:
-                with open(self.backfill_tracking_file, 'r') as f:
+                with open(self.last_processed_file, 'r') as f:
                     data = json.load(f)
-                    return set(data.get("backfilled_pairs", []))
+                    # Convert string keys back to int
+                    return {int(k): v for k, v in data.items()}
             except Exception as e:
-                self.logger.warning(f"Failed to load backfill tracking: {e}")
-        return set()
+                self.logger.warning(f"Failed to load last processed IDs: {e}")
+        return {}
     
-    def _save_backfill_tracking(self) -> None:
-        """Save backfill tracking to file."""
+    def _save_last_processed(self) -> None:
+        """Save last processed message IDs to file."""
         try:
-            with open(self.backfill_tracking_file, 'w') as f:
-                json.dump({"backfilled_pairs": list(self.backfilled_pairs)}, f, indent=2)
+            # Convert int keys to string for JSON
+            data = {str(k): v for k, v in self.last_processed_ids.items()}
+            with open(self.last_processed_file, 'w') as f:
+                json.dump(data, f, indent=2)
         except Exception as e:
-            self.logger.error(f"Failed to save backfill tracking: {e}")
+            self.logger.error(f"Failed to save last processed IDs: {e}")
     
     def _get_pair_key(self, source: int, target: int) -> str:
         """Generate a unique key for a channel pair."""
@@ -431,80 +434,115 @@ class TelegramForwarder:
                 )
                 continue
         
-        # Register event handler for ALL new messages (no filter)
-        # Filtering at registration time can cause issues with non-admin channels
-        # We'll filter inside the handler instead
-        self.client.add_event_handler(
-            self.handle_new_message,
-            events.NewMessage()
-        )
+        self.logger.info("🔄 POLLING MODE: Checking channels every 5 seconds for new messages")
+        self.logger.info(f"📡 Will poll {len(source_channels)} source channel(s)")
+        self.logger.info(f"📡 Channel IDs: {source_channels}")
         
-        # Track which channels are registered for filtering in handler
-        self.registered_source_channels = set(source_channels)
-        self.logger.info(f"📡 Event handler registered for ALL messages (will filter for {len(self.registered_source_channels)} source channel(s))")
-        self.logger.info(f"📡 Monitoring channel IDs: {source_channels}")
-        
-        # Test: Fetch latest message from each source to confirm bot can read them
+        # Initialize last processed IDs for new channels
         for source_id in source_channels:
-            try:
-                messages = await self.client.get_messages(source_id, limit=1)
-                if messages:
-                    self.logger.info(f"✓ Can read latest message from {source_id} (msg ID: {messages[0].id})")
-                else:
-                    self.logger.warning(f"⚠️  No messages found in {source_id}")
-            except Exception as e:
-                self.logger.error(f"❌ Cannot read messages from {source_id}: {type(e).__name__}: {e}")
+            if source_id not in self.last_processed_ids:
+                # Get latest message ID to start from
+                try:
+                    messages = await self.client.get_messages(source_id, limit=1)
+                    if messages:
+                        self.last_processed_ids[source_id] = messages[0].id
+                        self.logger.info(f"✓ Initialized {source_id} at message ID: {messages[0].id}")
+                    else:
+                        self.last_processed_ids[source_id] = 0
+                        self.logger.warning(f"⚠️  No messages found in {source_id}, starting from 0")
+                except Exception as e:
+                    self.logger.error(f"❌ Cannot access {source_id}: {type(e).__name__}: {e}")
+                    self.last_processed_ids[source_id] = 0
         
-        # Backfill recent messages for NEW channel pairs only (to avoid duplicates)
-        # Run backfill as a background task so it doesn't block live message processing
-        self.logger.info(f"📋 Checking backfill status for {len(channel_pairs)} channel pair(s)")
-        self.logger.info(f"📋 Currently tracked as backfilled: {list(self.backfilled_pairs)}")
-        
-        # Collect pairs that need backfill
-        pairs_to_backfill = []
-        for pair in channel_pairs:
-            backfill_count = pair.get("backfill_count", 0)
-            pair_key = self._get_pair_key(pair["source"], pair["target"])
-            
-            self.logger.info(f"📋 Pair: {pair['source']} -> {pair['target']}, backfill_count: {backfill_count}, pair_key: {pair_key}")
-            
-            if backfill_count > 0:
-                if pair_key not in self.backfilled_pairs:
-                    pairs_to_backfill.append((pair, backfill_count, pair_key))
-                else:
-                    self.logger.info(f"⏭️  SKIPPING - Pair already backfilled: {pair['source']} -> {pair['target']}")
-            else:
-                self.logger.info(f"⏭️  SKIPPING - backfill_count is 0 for: {pair['source']} -> {pair['target']}")
-        
-        # Start backfill as background task if needed
-        if pairs_to_backfill:
-            self.logger.info(f"🔄 Starting background backfill for {len(pairs_to_backfill)} pair(s)...")
-            asyncio.create_task(self._run_backfill_tasks(pairs_to_backfill))
+        # Save initial state
+        self._save_last_processed()
         
         self.logger.info("Bot is now running. Press Ctrl+C to stop.")
+        self.logger.info("🔄 Starting polling loop (checks every 5 seconds)...")
         
-        # Start background tasks
-        self.logger.info("🔍 Starting auto-backfill monitor (checks every 5 seconds)")
-        monitor_task = asyncio.create_task(self._monitor_backfill_trigger())
-        
-        self.logger.info("💓 Starting channel heartbeat monitor (checks every 60 seconds)")
-        heartbeat_task = asyncio.create_task(self._monitor_channel_heartbeat())
+        # Start polling task
+        polling_task = asyncio.create_task(self._poll_channels())
         
         # Keep the bot running
         try:
-            await self.client.run_until_disconnected()
-        finally:
-            # Cancel monitor tasks on shutdown
-            monitor_task.cancel()
-            heartbeat_task.cancel()
+            await polling_task
+        except KeyboardInterrupt:
+            self.logger.info("Received interrupt signal, shutting down...")
+            polling_task.cancel()
             try:
-                await monitor_task
+                await polling_task
             except asyncio.CancelledError:
                 pass
+    
+    async def _poll_channels(self) -> None:
+        """
+        Continuously poll channels for new messages (polling mode).
+        Runs every 5 seconds and forwards new messages.
+        """
+        while True:
             try:
-                await heartbeat_task
+                await asyncio.sleep(5)  # Poll every 5 seconds
+                
+                channel_pairs = self.config_manager.get_channel_pairs()
+                
+                for pair in channel_pairs:
+                    if not pair.get("enabled", True):
+                        continue
+                    
+                    source = pair["source"]
+                    target = pair["target"]
+                    
+                    try:
+                        # Get last processed message ID
+                        last_processed = self.last_processed_ids.get(source, 0)
+                        
+                        # Fetch messages since last processed (up to 100)
+                        messages = await self.client.get_messages(
+                            source,
+                            limit=100,
+                            min_id=last_processed
+                        )
+                        
+                        if not messages:
+                            continue
+                        
+                        # Process messages in chronological order (oldest first)
+                        for message in reversed(messages):
+                            if message.id <= last_processed:
+                                continue  # Already processed
+                            
+                            # Forward the message
+                            try:
+                                await self.forward_message_with_retry(
+                                    message,
+                                    source,
+                                    [target],
+                                    is_backfill=False
+                                )
+                                
+                                # Update last processed
+                                self.last_processed_ids[source] = message.id
+                                
+                            except Exception as forward_error:
+                                self.logger.error(
+                                    f"Failed to forward message {message.id} from {source} to {target}: {forward_error}"
+                                )
+                                # Continue with next message even if one fails
+                        
+                        # Save state after processing each channel
+                        self._save_last_processed()
+                        
+                    except Exception as e:
+                        self.logger.error(f"Error polling channel {source}: {type(e).__name__}: {e}")
+                        continue
+                
             except asyncio.CancelledError:
-                pass
+                self.logger.info("🔄 Polling loop stopped")
+                break
+            except Exception as e:
+                self.logger.error(f"Error in polling loop: {e}")
+                # Continue polling even if one iteration fails
+                await asyncio.sleep(5)
     
     async def handle_new_message(self, event) -> None:
         """

@@ -327,11 +327,11 @@ def process_add_channel_pair(message):
             config_manager.add_channel_pair(source, target, backfill)
             worker_msg = ""
         
-        # Create trigger file
-        trigger_file = Path("trigger_backfill.flag")
+        # Create trigger file to reload config
+        trigger_file = Path("trigger_reload.flag")
         try:
             trigger_file.touch()
-            auto_backfill_msg = "🔔 <b>Auto-backfill triggered!</b> The main bot will automatically backfill this pair within 5-10 seconds."
+            auto_backfill_msg = "🔔 <b>Config reloaded!</b> The bot will detect the new pair within 5 seconds and start forwarding messages automatically."
         except Exception as e:
             auto_backfill_msg = f"⚠️ Could not create trigger file. Please restart: <code>./start.sh</code>"
         
