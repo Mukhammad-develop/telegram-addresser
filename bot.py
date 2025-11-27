@@ -307,9 +307,15 @@ class TelegramForwarder:
         Continuously poll channels for new messages (polling mode).
         Runs every 5 seconds and forwards new messages.
         """
+        # Track processed media groups (to avoid sending albums multiple times)
+        processed_groups_in_cycle = set()
+        
         while True:
             try:
                 await asyncio.sleep(5)  # Poll every 5 seconds
+                
+                # Clear processed groups from previous cycle
+                processed_groups_in_cycle.clear()
                 
                 channel_pairs = self.config_manager.get_channel_pairs()
                 
@@ -338,6 +344,17 @@ class TelegramForwarder:
                         for message in reversed(messages):
                             if message.id <= last_processed:
                                 continue  # Already processed
+                            
+                            # Check for media group (album)
+                            if message.grouped_id:
+                                # Skip if we've already processed this group in this cycle
+                                if message.grouped_id in processed_groups_in_cycle:
+                                    # Just update last_processed, don't send again
+                                    self.last_processed_ids[source] = message.id
+                                    continue
+                                
+                                # Mark this group as processed
+                                processed_groups_in_cycle.add(message.grouped_id)
                             
                             # Forward the message
                             try:
