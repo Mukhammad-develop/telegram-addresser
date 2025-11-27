@@ -344,7 +344,7 @@ class TelegramForwarder:
                                 await self.forward_message_with_retry(
                                     message,
                                     source,
-                                    [target],
+                                    target,  # Single target ID, not a list
                                     is_backfill=False
                                 )
                                 
