@@ -59,10 +59,15 @@ Welcome to the Telegram Forwarder Bot documentation! All guides are organized he
 ## 🚀 Deployment
 
 ### Cloud Hosting
-- **[PYTHONANYWHERE_DEPLOYMENT.md](PYTHONANYWHERE_DEPLOYMENT.md)** - PythonAnywhere (Recommended)
+- **[PYTHONANYWHERE_COMPLETE_GUIDE.md](PYTHONANYWHERE_COMPLETE_GUIDE.md)** - 👈 **COMPLETE PA GUIDE** ⭐
+  - All-in-one PythonAnywhere guide
+  - Setup, configuration, monitoring
+  - Troubleshooting and best practices
+  - File structure and maintenance
+
+- **[PYTHONANYWHERE_DEPLOYMENT.md](PYTHONANYWHERE_DEPLOYMENT.md)** - PythonAnywhere (Quick version)
+  - Condensed deployment steps
   - Always-on tasks setup
-  - Configuration for 24/7 operation
-  - Monitoring and logs
 
 - **[CONTABO_DEPLOYMENT.md](CONTABO_DEPLOYMENT.md)** - Contabo VPS deployment
   - VPS-specific instructions
@@ -117,7 +122,7 @@ Welcome to the Telegram Forwarder Bot documentation! All guides are organized he
 | I want to... | Read this |
 |-------------|-----------|
 | **Set up the bot for the first time** | [QUICK_START.md](QUICK_START.md) |
-| **Deploy to PythonAnywhere** | [PYTHONANYWHERE_DEPLOYMENT.md](PYTHONANYWHERE_DEPLOYMENT.md) |
+| **Deploy to PythonAnywhere** | [PYTHONANYWHERE_COMPLETE_GUIDE.md](PYTHONANYWHERE_COMPLETE_GUIDE.md) |
 | **Use the Telegram admin bot** | [TELEGRAM_ADMIN_BOT.md](TELEGRAM_ADMIN_BOT.md) |
 | **Configure text replacement** | [REGEX_GUIDE.md](REGEX_GUIDE.md) |
 | **Backfill historical messages** | [BACKFILL_EXPLANATION.md](BACKFILL_EXPLANATION.md) |
@@ -139,7 +144,7 @@ Welcome to the Telegram Forwarder Bot documentation! All guides are organized he
 3. [REGEX_GUIDE.md](REGEX_GUIDE.md)
 
 **☁️ Deploying to Production:**
-1. [PYTHONANYWHERE_DEPLOYMENT.md](PYTHONANYWHERE_DEPLOYMENT.md)
+1. [PYTHONANYWHERE_COMPLETE_GUIDE.md](PYTHONANYWHERE_COMPLETE_GUIDE.md)
 2. [DEPLOYMENT.md](DEPLOYMENT.md)
 3. [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
