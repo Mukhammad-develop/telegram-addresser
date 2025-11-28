@@ -1,5 +1,11 @@
 # 🚀 PythonAnywhere Deployment Guide
 
+> **📖 Looking for the complete guide?** See **[PYTHONANYWHERE_COMPLETE_GUIDE.md](PYTHONANYWHERE_COMPLETE_GUIDE.md)** for the comprehensive all-in-one guide with troubleshooting, file structure, and best practices!
+
+---
+
+**Quick deployment guide** - For detailed information, see the complete guide above.
+
 Step-by-step guide to deploy Telegram Forwarder Bot on PythonAnywhere.
 
 ## 📋 Prerequisites
