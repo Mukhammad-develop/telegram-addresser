@@ -99,6 +99,11 @@ class TelegramForwarder:
         self.backfill_tracking_file = Path("backfill_tracking.json")
         self.backfilled_pairs: Dict[str, float] = self._load_backfill_tracking()
         
+        # Persist message ID mapping for deletion sync (survives restarts)
+        self.message_id_map_file = Path("message_id_map.json")
+        self.message_id_map: Dict[str, Dict[str, int]] = self._load_message_id_map()
+        # Format: {"source_id:message_id": {"target_id": target_msg_id, "timestamp": 123456}}
+        
         # File-based trigger for config reload (created by admin bot)
         self.config_reload_trigger_file = Path("trigger_reload.flag")
         
@@ -197,9 +202,52 @@ class TelegramForwarder:
         """Generate a unique key for a channel pair."""
         return f"{source}:{target}"
     
-    def _get_pair_key(self, source: int, target: int) -> str:
-        """Generate a unique key for a channel pair."""
-        return f"{source}:{target}"
+    def _load_message_id_map(self) -> Dict[str, Dict[str, int]]:
+        """Load message ID mapping from file."""
+        if self.message_id_map_file.exists():
+            try:
+                with open(self.message_id_map_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.warning(f"Failed to load message ID map: {e}")
+        return {}
+    
+    def _save_message_id_map(self) -> None:
+        """Save message ID mapping to file."""
+        try:
+            with open(self.message_id_map_file, 'w') as f:
+                json.dump(self.message_id_map, f, indent=2)
+        except Exception as e:
+            self.logger.error(f"Failed to save message ID map: {e}")
+    
+    def _store_message_mapping(self, source: int, source_msg_id: int, target: int, target_msg_id: int) -> None:
+        """
+        Store message ID mapping for deletion sync and reply chains.
+        
+        Args:
+            source: Source channel ID
+            source_msg_id: Source message ID
+            target: Target channel ID  
+            target_msg_id: Target message ID
+        """
+        map_key = f"{source}:{source_msg_id}"
+        self.message_id_map[map_key] = {
+            "target_id": target,
+            "target_msg_id": target_msg_id,
+            "timestamp": time.time()
+        }
+        
+        # Clean up old mappings (keep last 5000, delete oldest 1000)
+        if len(self.message_id_map) > 5000:
+            # Sort by timestamp and keep only the newest 4000
+            sorted_items = sorted(
+                self.message_id_map.items(),
+                key=lambda x: x[1].get("timestamp", 0),
+                reverse=True
+            )
+            self.message_id_map = dict(sorted_items[:4000])
+            self._save_message_id_map()
+            self.logger.debug(f"Cleaned up message ID map, kept 4000 most recent entries")
     
     def _is_sticker_or_animated(self, message: Message) -> bool:
         """Check if message contains a sticker or animated sticker."""
@@ -346,6 +394,14 @@ class TelegramForwarder:
             else:
                 self.logger.info(f"⏭️  SKIPPING - backfill_count is 0 for {source} -> {target}")
         
+        # Register message deletion event handler for all source channels
+        if source_channels:
+            self.logger.info("🗑️  Registering message deletion handler for sync...")
+            @self.client.on(events.MessageDeleted())
+            async def handle_message_deleted(event):
+                await self._handle_deletion(event)
+            self.logger.info(f"✅ Deletion handler registered for {len(source_channels)} source channel(s)")
+        
         self.logger.info("Bot is now running. Press Ctrl+C to stop.")
         self.logger.info("🔄 Starting polling loop (checks every 5 seconds)...")
         
@@ -449,6 +505,87 @@ class TelegramForwarder:
                 self.logger.error(f"Error in polling loop: {e}")
                 # Continue polling even if one iteration fails
                 await asyncio.sleep(5)
+    
+    async def _handle_deletion(self, event) -> None:
+        """
+        Handle message deletion events and sync deletions to target channels.
+        
+        Args:
+            event: Telethon MessageDeleted event
+        """
+        try:
+            # Get the channel where deletion occurred
+            if hasattr(event, 'chat_id') and event.chat_id:
+                source_channel = event.chat_id
+            elif hasattr(event, 'peer') and event.peer:
+                # Try to extract channel ID from peer
+                source_channel = event.peer.channel_id if hasattr(event.peer, 'channel_id') else None
+                if source_channel:
+                    source_channel = int(f"-100{source_channel}")
+            else:
+                self.logger.debug("Deletion event without identifiable channel, skipping")
+                return
+            
+            # Get deleted message IDs
+            deleted_ids = event.deleted_ids if hasattr(event, 'deleted_ids') else []
+            
+            if not deleted_ids:
+                self.logger.debug("Deletion event without message IDs, skipping")
+                return
+            
+            self.logger.info(f"🗑️  Detected deletion of {len(deleted_ids)} message(s) in {source_channel}")
+            
+            # Check if this source channel is in our monitored pairs
+            channel_pairs = self.config_manager.get_channel_pairs()
+            target_channels = []
+            for pair in channel_pairs:
+                if pair["source"] == source_channel and pair.get("enabled", True):
+                    target_channels.append(pair["target"])
+            
+            if not target_channels:
+                self.logger.debug(f"Source channel {source_channel} not in monitored pairs, ignoring deletion")
+                return
+            
+            # Delete corresponding messages in target channels
+            deletion_count = 0
+            for source_msg_id in deleted_ids:
+                map_key = f"{source_channel}:{source_msg_id}"
+                
+                if map_key in self.message_id_map:
+                    mapping = self.message_id_map[map_key]
+                    target_channel = mapping.get("target_id")
+                    target_msg_id = mapping.get("target_msg_id")
+                    
+                    if target_channel and target_msg_id:
+                        try:
+                            # Delete the message in target channel
+                            await self.client.delete_messages(target_channel, target_msg_id)
+                            deletion_count += 1
+                            self.logger.info(
+                                f"🗑️  ✅ Deleted message {target_msg_id} in {target_channel} "
+                                f"(source: {source_msg_id} from {source_channel})"
+                            )
+                            
+                            # Remove from mapping
+                            del self.message_id_map[map_key]
+                            self._save_message_id_map()
+                            
+                        except Exception as del_error:
+                            self.logger.warning(
+                                f"🗑️  ❌ Failed to delete message {target_msg_id} in {target_channel}: "
+                                f"{type(del_error).__name__}: {del_error}"
+                            )
+                else:
+                    self.logger.debug(
+                        f"🗑️  Message {source_msg_id} from {source_channel} not found in mapping "
+                        f"(may be older than map retention or never forwarded)"
+                    )
+            
+            if deletion_count > 0:
+                self.logger.info(f"🗑️  Successfully synced {deletion_count}/{len(deleted_ids)} deletion(s)")
+        
+        except Exception as e:
+            self.logger.error(f"Error handling deletion event: {type(e).__name__}: {e}", exc_info=True)
     
     async def handle_new_message(self, event) -> None:
         """
@@ -587,7 +724,9 @@ class TelegramForwarder:
                     # Map the source reply ID to target reply ID
                     source_reply_id = message.reply_to.reply_to_msg_id
                     map_key = f"{source}:{source_reply_id}"
-                    reply_to = self.message_id_map.get(map_key)
+                    mapping = self.message_id_map.get(map_key)
+                    if mapping:
+                        reply_to = mapping.get("target_msg_id")
                     if not reply_to:
                         self.logger.debug(
                             f"Reply target message {source_reply_id} not found in map, reply chain will break"
@@ -669,16 +808,9 @@ class TelegramForwarder:
                                 self.logger.info(f"📋 Final fallback: Will copy message content instead")
                                 # Fall through to copying method
                         
-                        # Store message ID mapping for reply chains
+                        # Store message ID mapping for reply chains and deletion sync
                         if sent_msg:
-                            map_key = f"{source}:{message.id}"
-                            self.message_id_map[map_key] = sent_msg.id
-                            # Clean up old mappings (keep last 1000)
-                            if len(self.message_id_map) > 1000:
-                                # Remove oldest 200 entries
-                                keys_to_remove = list(self.message_id_map.keys())[:200]
-                                for key in keys_to_remove:
-                                    del self.message_id_map[key]
+                            self._store_message_mapping(source, message.id, target, sent_msg.id)
                             return True
                         
                     except Exception as forward_error:
@@ -767,22 +899,14 @@ class TelegramForwarder:
                                 force_document=False
                             )
                             
-                            # Store message ID mapping for reply chains
+                            # Store message ID mapping for reply chains and deletion sync
                             if sent_msg:
                                 # For media groups, sent_msg might be a list
                                 if isinstance(sent_msg, list):
                                     # Map the first message in group (which has the caption)
-                                    map_key = f"{source}:{message.id}"
-                                    self.message_id_map[map_key] = sent_msg[0].id
+                                    self._store_message_mapping(source, message.id, target, sent_msg[0].id)
                                 else:
-                                    map_key = f"{source}:{message.id}"
-                                    self.message_id_map[map_key] = sent_msg.id
-                                
-                                # Clean up old mappings (keep last 1000)
-                                if len(self.message_id_map) > 1000:
-                                    keys_to_remove = list(self.message_id_map.keys())[:200]
-                                    for key in keys_to_remove:
-                                        del self.message_id_map[key]
+                                    self._store_message_mapping(source, message.id, target, sent_msg.id)
                             
                             self.logger.info(
                                 f"{prefix} -> Sent media group with {len(media_files)} items "
@@ -825,15 +949,9 @@ class TelegramForwarder:
                             formatting_entities=formatting_entities
                         )
                         
-                        # Store message ID mapping for reply chains
+                        # Store message ID mapping for reply chains and deletion sync
                         if sent_msg:
-                            map_key = f"{source}:{message.id}"
-                            self.message_id_map[map_key] = sent_msg.id
-                            # Clean up old mappings (keep last 1000)
-                            if len(self.message_id_map) > 1000:
-                                keys_to_remove = list(self.message_id_map.keys())[:200]
-                                for key in keys_to_remove:
-                                    del self.message_id_map[key]
+                            self._store_message_mapping(source, message.id, target, sent_msg.id)
                         
                         self.logger.info(f"{prefix} -> Sent sticker/emoji {message.id} from {source} to {target}")
                         return True
@@ -871,15 +989,9 @@ class TelegramForwarder:
                                 force_document=force_document
                             )
                             
-                            # Store message ID mapping for reply chains
+                            # Store message ID mapping for reply chains and deletion sync
                             if sent_msg:
-                                map_key = f"{source}:{message.id}"
-                                self.message_id_map[map_key] = sent_msg.id
-                                # Clean up old mappings (keep last 1000)
-                                if len(self.message_id_map) > 1000:
-                                    keys_to_remove = list(self.message_id_map.keys())[:200]
-                                    for key in keys_to_remove:
-                                        del self.message_id_map[key]
+                                self._store_message_mapping(source, message.id, target, sent_msg.id)
                             
                             # Clean up downloaded file
                             try:
@@ -927,15 +1039,9 @@ class TelegramForwarder:
                         formatting_entities=formatting_entities
                     )
                     
-                    # Store message ID mapping for reply chains
+                    # Store message ID mapping for reply chains and deletion sync
                     if sent_msg:
-                        map_key = f"{source}:{message.id}"
-                        self.message_id_map[map_key] = sent_msg.id
-                        # Clean up old mappings (keep last 1000)
-                        if len(self.message_id_map) > 1000:
-                            keys_to_remove = list(self.message_id_map.keys())[:200]
-                            for key in keys_to_remove:
-                                del self.message_id_map[key]
+                        self._store_message_mapping(source, message.id, target, sent_msg.id)
                 
                 self.logger.info(
                     f"{prefix} -> Copied message {message.id} "
