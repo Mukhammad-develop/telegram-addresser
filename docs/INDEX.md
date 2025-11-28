@@ -59,7 +59,16 @@ Welcome to the Telegram Forwarder Bot documentation! All guides are organized he
 ## 🚀 Deployment
 
 ### Cloud Hosting
-- **[PYTHONANYWHERE_COMPLETE_GUIDE.md](PYTHONANYWHERE_COMPLETE_GUIDE.md)** - 👈 **COMPLETE PA GUIDE** ⭐
+
+**For Non-Technical Users:**
+- **[PYTHONANYWHERE_SIMPLE_GUIDE.md](PYTHONANYWHERE_SIMPLE_GUIDE.md)** - 👶 **FOR BEGINNERS** ⭐
+  - No IT knowledge needed!
+  - Simple everyday language
+  - Step-by-step with screenshots descriptions
+  - Perfect for clients
+
+**For Technical Users:**
+- **[PYTHONANYWHERE_COMPLETE_GUIDE.md](PYTHONANYWHERE_COMPLETE_GUIDE.md)** - 🔧 **COMPLETE PA GUIDE**
   - All-in-one PythonAnywhere guide
   - Setup, configuration, monitoring
   - Troubleshooting and best practices
@@ -69,6 +78,7 @@ Welcome to the Telegram Forwarder Bot documentation! All guides are organized he
   - Condensed deployment steps
   - Always-on tasks setup
 
+**VPS Deployment:**
 - **[CONTABO_DEPLOYMENT.md](CONTABO_DEPLOYMENT.md)** - Contabo VPS deployment
   - VPS-specific instructions
   - systemd service setup
@@ -133,7 +143,12 @@ Welcome to the Telegram Forwarder Bot documentation! All guides are organized he
 
 ### By User Type
 
-**🆕 New Users:**
+**🆕 New Users (Non-Technical):**
+1. [PYTHONANYWHERE_SIMPLE_GUIDE.md](PYTHONANYWHERE_SIMPLE_GUIDE.md) - Start here!
+2. [START_HERE.md](START_HERE.md)
+3. [TELEGRAM_ADMIN_BOT.md](TELEGRAM_ADMIN_BOT.md)
+
+**🆕 New Users (Technical):**
 1. [START_HERE.md](START_HERE.md)
 2. [QUICK_START.md](QUICK_START.md)
 3. [TELEGRAM_ADMIN_BOT.md](TELEGRAM_ADMIN_BOT.md)
