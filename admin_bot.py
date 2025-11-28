@@ -321,6 +321,25 @@ def process_add_channel_pair(message):
             config_manager.config = config
             config_manager.save()
             
+            # Mark pair for backfill by removing it from backfill_tracking.json
+            backfill_tracking_file = Path("backfill_tracking.json")
+            try:
+                if backfill_tracking_file.exists():
+                    with open(backfill_tracking_file, 'r') as f:
+                        backfill_tracking = json.load(f)
+                else:
+                    backfill_tracking = {}
+                
+                # Remove the pair key if it exists (to trigger backfill)
+                pair_key = f"{source}:{target}"
+                if pair_key in backfill_tracking:
+                    del backfill_tracking[pair_key]
+                    
+                    with open(backfill_tracking_file, 'w') as f:
+                        json.dump(backfill_tracking, f, indent=2)
+            except Exception as e:
+                logger.warning(f"Could not update backfill tracking: {e}")
+            
             worker_msg = f" to <b>{selected_worker_id}</b>"
         else:
             # Single-worker mode: use old method

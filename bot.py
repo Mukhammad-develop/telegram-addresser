@@ -94,6 +94,11 @@ class TelegramForwarder:
         self.last_processed_file = Path("last_processed.json")
         self.last_processed_ids: Dict[int, int] = self._load_last_processed()
         
+        # Track backfilled pairs to avoid re-backfilling on restart
+        # Format: {"source:target": timestamp}
+        self.backfill_tracking_file = Path("backfill_tracking.json")
+        self.backfilled_pairs: Dict[str, float] = self._load_backfill_tracking()
+        
         # File-based trigger for config reload (created by admin bot)
         self.config_reload_trigger_file = Path("trigger_reload.flag")
         
@@ -169,6 +174,28 @@ class TelegramForwarder:
                 json.dump(data, f, indent=2)
         except Exception as e:
             self.logger.error(f"Failed to save last processed IDs: {e}")
+    
+    def _load_backfill_tracking(self) -> Dict[str, float]:
+        """Load backfill tracking data from file."""
+        if self.backfill_tracking_file.exists():
+            try:
+                with open(self.backfill_tracking_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.warning(f"Failed to load backfill tracking: {e}")
+        return {}
+    
+    def _save_backfill_tracking(self) -> None:
+        """Save backfill tracking data to file."""
+        try:
+            with open(self.backfill_tracking_file, 'w') as f:
+                json.dump(self.backfilled_pairs, f, indent=2)
+        except Exception as e:
+            self.logger.error(f"Failed to save backfill tracking: {e}")
+    
+    def _get_pair_key(self, source: int, target: int) -> str:
+        """Generate a unique key for a channel pair."""
+        return f"{source}:{target}"
     
     def _get_pair_key(self, source: int, target: int) -> str:
         """Generate a unique key for a channel pair."""
@@ -284,6 +311,40 @@ class TelegramForwarder:
         
         # Save initial state
         self._save_last_processed()
+        
+        # Check and run backfill for channel pairs that need it
+        self.logger.info("📦 Checking if backfill is needed for channel pairs...")
+        for pair in channel_pairs:
+            if not pair.get("enabled", True):
+                continue
+            
+            source = pair["source"]
+            target = pair["target"]
+            backfill_count = pair.get("backfill_count", 0)
+            pair_key = self._get_pair_key(source, target)
+            
+            self.logger.info(
+                f"📋 Pair: {source} -> {target}, "
+                f"backfill_count: {backfill_count}, "
+                f"pair_key: {pair_key}"
+            )
+            
+            # Check if this pair has been backfilled before
+            if pair_key in self.backfilled_pairs:
+                self.logger.info(f"⏭️  SKIPPING - Pair already backfilled: {source} -> {target}")
+                continue
+            
+            # If backfill_count > 0, backfill now
+            if backfill_count > 0:
+                self.logger.info(f"🔄 BACKFILLING {backfill_count} messages: {source} -> {target}")
+                await self.backfill_messages(source, target, backfill_count)
+                
+                # Mark as backfilled
+                self.backfilled_pairs[pair_key] = time.time()
+                self._save_backfill_tracking()
+                self.logger.info(f"✅ Backfill complete for {source} -> {target}")
+            else:
+                self.logger.info(f"⏭️  SKIPPING - backfill_count is 0 for {source} -> {target}")
         
         self.logger.info("Bot is now running. Press Ctrl+C to stop.")
         self.logger.info("🔄 Starting polling loop (checks every 5 seconds)...")
@@ -1010,6 +1071,21 @@ class TelegramForwarder:
             self.logger.error(
                 f"Error during backfill from {source} to {target}: {type(e).__name__}: {e}"
             )
+    
+    def mark_pair_for_backfill(self, source: int, target: int) -> None:
+        """
+        Mark a channel pair for backfill (removes from backfilled pairs).
+        This is useful when a new pair is added and needs to be backfilled.
+        
+        Args:
+            source: Source channel ID
+            target: Target channel ID
+        """
+        pair_key = self._get_pair_key(source, target)
+        if pair_key in self.backfilled_pairs:
+            del self.backfilled_pairs[pair_key]
+            self._save_backfill_tracking()
+            self.logger.info(f"📍 Marked pair for backfill: {source} -> {target}")
     
     def reload_config(self) -> None:
         """Reload configuration from file."""
