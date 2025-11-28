@@ -60,6 +60,8 @@ config.json
 config_1.json
 config.json.backup
 last_processed.json
+message_id_map.json
+backfill_tracking.json
 trigger_reload.flag
 
 # Worker-specific config files (auto-generated)
