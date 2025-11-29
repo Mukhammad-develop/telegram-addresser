@@ -1116,21 +1116,19 @@ class TelegramForwarder:
         count: int
     ) -> None:
         """
-        Backfill recent messages from source to target (copies without "Forwarded from").
+        Backfill messages from source to target.
+        If count is 0 or negative, copies ALL messages from the beginning.
+        Otherwise copies last N messages.
         
         Args:
             source: Source channel ID
             target: Target channel ID
-            count: Number of recent messages to backfill
+            count: Number of messages to backfill (0 = all messages from beginning)
         """
-        if count <= 0:
+        if count < 0:
             return
         
         try:
-            self.logger.info(
-                f"Backfilling last {count} messages from {source} to {target}"
-            )
-            
             # Get channel entities first (important for Telethon)
             try:
                 source_entity = await self.client.get_entity(source)
@@ -1142,36 +1140,129 @@ class TelegramForwarder:
                 )
                 return
             
-            # Get recent messages
-            messages = await self.client.get_messages(source_entity, limit=count)
-            
-            # Track processed groups during backfill
-            backfill_processed_groups = set()
-            
-            # Copy in chronological order (oldest first)
-            for message in reversed(messages):
-                # Skip if this message is part of an already-processed media group
-                if message.grouped_id:
-                    if message.grouped_id in backfill_processed_groups:
-                        self.logger.debug(
-                            f"Backfill: Skipping message {message.id} - already processed as part of group {message.grouped_id}"
+            # Determine if we're doing full copy or limited backfill
+            if count == 0:
+                # FULL COPY MODE - Copy ALL messages from beginning to end
+                self.logger.info(
+                    f"🔄 FULL COPY MODE: Starting complete channel copy from {source} to {target}"
+                )
+                self.logger.info("This will copy ALL messages from the beginning. This may take a while...")
+                
+                # Track processed groups during full copy
+                full_copy_processed_groups = set()
+                total_copied = 0
+                total_skipped = 0
+                
+                # Get messages in batches from oldest to newest
+                # Start from message ID 1 (or offset_id=0 gets from beginning)
+                batch_size = 100
+                offset_id = 0
+                
+                while True:
+                    # Get messages batch (offset_id=0 starts from newest, reverse=True gets oldest first)
+                    # To get from beginning, we need to use offset_id parameter
+                    messages = await self.client.get_messages(
+                        source_entity,
+                        limit=batch_size,
+                        offset_id=offset_id,
+                        reverse=True  # Get in chronological order (oldest first)
+                    )
+                    
+                    if not messages:
+                        self.logger.info("📭 No more messages to copy")
+                        break
+                    
+                    self.logger.info(
+                        f"📦 Processing batch: {len(messages)} messages "
+                        f"(IDs {messages[0].id} to {messages[-1].id})"
+                    )
+                    
+                    # Process each message in the batch
+                    for message in messages:
+                        # Skip if this message is part of an already-processed media group
+                        if message.grouped_id:
+                            if message.grouped_id in full_copy_processed_groups:
+                                self.logger.debug(
+                                    f"Full copy: Skipping message {message.id} - "
+                                    f"already processed as part of group {message.grouped_id}"
+                                )
+                                total_skipped += 1
+                                continue
+                            # Mark this group as processed
+                            full_copy_processed_groups.add(message.grouped_id)
+                        
+                        # Check filters
+                        text = message.text or message.message or ""
+                        filters = self.config_manager.get_filters()
+                        
+                        if not self.text_processor.should_forward_message(text, filters):
+                            self.logger.debug(f"Full copy: message {message.id} filtered out")
+                            total_skipped += 1
+                            continue
+                        
+                        # Copy with retry
+                        success = await self.forward_message_with_retry(
+                            message, source, target, is_backfill=True
                         )
+                        
+                        if success:
+                            total_copied += 1
+                            
+                            # Log progress every 50 messages
+                            if total_copied % 50 == 0:
+                                self.logger.info(
+                                    f"📊 Progress: {total_copied} messages copied, "
+                                    f"{total_skipped} skipped"
+                                )
+                    
+                    # Update offset to get next batch
+                    # Set offset_id to last message ID in this batch + 1
+                    offset_id = messages[-1].id
+                    
+                    # Small delay to avoid rate limits
+                    await asyncio.sleep(1)
+                
+                self.logger.info(
+                    f"✅ FULL COPY COMPLETED: {total_copied} messages copied, "
+                    f"{total_skipped} skipped from {source} -> {target}"
+                )
+                
+            else:
+                # LIMITED BACKFILL MODE - Copy last N messages
+                self.logger.info(
+                    f"Backfilling last {count} messages from {source} to {target}"
+                )
+                
+                # Get recent messages
+                messages = await self.client.get_messages(source_entity, limit=count)
+                
+                # Track processed groups during backfill
+                backfill_processed_groups = set()
+                
+                # Copy in chronological order (oldest first)
+                for message in reversed(messages):
+                    # Skip if this message is part of an already-processed media group
+                    if message.grouped_id:
+                        if message.grouped_id in backfill_processed_groups:
+                            self.logger.debug(
+                                f"Backfill: Skipping message {message.id} - already processed as part of group {message.grouped_id}"
+                            )
+                            continue
+                        # Mark this group as processed
+                        backfill_processed_groups.add(message.grouped_id)
+                    
+                    # Check filters
+                    text = message.text or message.message or ""
+                    filters = self.config_manager.get_filters()
+                    
+                    if not self.text_processor.should_forward_message(text, filters):
+                        self.logger.debug(f"Backfill message {message.id} filtered out")
                         continue
-                    # Mark this group as processed
-                    backfill_processed_groups.add(message.grouped_id)
+                    
+                    # Copy with retry (no delay - let retry logic handle rate limits)
+                    await self.forward_message_with_retry(message, source, target, is_backfill=True)
                 
-                # Check filters
-                text = message.text or message.message or ""
-                filters = self.config_manager.get_filters()
-                
-                if not self.text_processor.should_forward_message(text, filters):
-                    self.logger.debug(f"Backfill message {message.id} filtered out")
-                    continue
-                
-                # Copy with retry (no delay - let retry logic handle rate limits)
-                await self.forward_message_with_retry(message, source, target, is_backfill=True)
-            
-            self.logger.info(f"Backfill completed for {source} -> {target}")
+                self.logger.info(f"Backfill completed for {source} -> {target}")
             
         except Exception as e:
             self.logger.error(
