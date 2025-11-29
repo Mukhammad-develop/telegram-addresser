@@ -382,9 +382,13 @@ class TelegramForwarder:
                 self.logger.info(f"⏭️  SKIPPING - Pair already backfilled: {source} -> {target}")
                 continue
             
-            # If backfill_count > 0, backfill now
-            if backfill_count > 0:
-                self.logger.info(f"🔄 BACKFILLING {backfill_count} messages: {source} -> {target}")
+            # If backfill_count >= 0, backfill now (0 = full copy, >0 = last N messages)
+            if backfill_count >= 0:
+                if backfill_count == 0:
+                    self.logger.info(f"🔄 FULL COPY MODE: {source} -> {target}")
+                else:
+                    self.logger.info(f"🔄 BACKFILLING {backfill_count} messages: {source} -> {target}")
+                
                 await self.backfill_messages(source, target, backfill_count)
                 
                 # Mark as backfilled
@@ -392,7 +396,7 @@ class TelegramForwarder:
                 self._save_backfill_tracking()
                 self.logger.info(f"✅ Backfill complete for {source} -> {target}")
             else:
-                self.logger.info(f"⏭️  SKIPPING - backfill_count is 0 for {source} -> {target}")
+                self.logger.info(f"⏭️  SKIPPING - backfill_count is negative for {source} -> {target}")
         
         # Register message deletion event handler for all source channels
         if source_channels:
