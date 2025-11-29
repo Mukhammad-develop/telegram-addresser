@@ -2224,15 +2224,9 @@ def process_auth_code(message):
     
     # Run async sign in
     try:
-        # Get or create event loop
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        # Create new event loop (Python 3.10+ compatible)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         
         client = TelegramClient(session_name, api_id, api_hash)
         
@@ -2353,15 +2347,9 @@ def process_auth_2fa(message):
     
     # Run async 2FA check
     try:
-        # Get or create event loop
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        # Create new event loop (Python 3.10+ compatible)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         
         client = TelegramClient(session_name, api_id, api_hash)
         
