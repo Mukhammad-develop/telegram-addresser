@@ -431,6 +431,57 @@ class TelegramForwarder:
             try:
                 await asyncio.sleep(5)  # Poll every 5 seconds
                 
+                # Check for config reload trigger file
+                if self.config_reload_trigger_file.exists():
+                    self.logger.info("🔄 Config reload triggered by admin bot")
+                    try:
+                        # Reload config
+                        self.config = self.config_manager.load()
+                        self.text_processor.update_rules(self.config_manager.get_replacement_rules())
+                        self.logger.info("✅ Config reloaded - new rules/filters active")
+                        
+                        # Check for NEW channel pairs that need backfilling
+                        channel_pairs = self.config_manager.get_channel_pairs()
+                        for pair in channel_pairs:
+                            if not pair.get("enabled", True):
+                                continue
+                            
+                            source = pair["source"]
+                            target = pair["target"]
+                            backfill_count = pair.get("backfill_count", 0)
+                            pair_key = self._get_pair_key(source, target)
+                            
+                            # If this is a new pair (not in tracking), backfill it
+                            if pair_key not in self.backfilled_pairs and backfill_count > 0:
+                                self.logger.info(f"🆕 New pair detected: {source} -> {target}")
+                                self.logger.info(f"🔄 Backfilling {backfill_count} messages...")
+                                await self.backfill_messages(source, target, backfill_count)
+                                
+                                # Mark as backfilled
+                                self.backfilled_pairs[pair_key] = time.time()
+                                self._save_backfill_tracking()
+                                self.logger.info(f"✅ New pair backfilled and ready")
+                            
+                            # Initialize last_processed_ids for new source channels
+                            if source not in self.last_processed_ids:
+                                try:
+                                    msgs = await self.client.get_messages(source, limit=1)
+                                    if msgs:
+                                        self.last_processed_ids[source] = msgs[0].id
+                                        self.logger.info(f"✓ Initialized new channel {source} at message ID: {msgs[0].id}")
+                                    else:
+                                        self.last_processed_ids[source] = 0
+                                except Exception as e:
+                                    self.logger.error(f"Cannot access new channel {source}: {e}")
+                                    self.last_processed_ids[source] = 0
+                        
+                        # Remove trigger file
+                        self.config_reload_trigger_file.unlink()
+                        self.logger.info("✅ Config reload complete, resuming normal operation")
+                        
+                    except Exception as e:
+                        self.logger.error(f"Error during config reload: {e}")
+                
                 # Clear processed groups from previous cycle
                 processed_groups_in_cycle.clear()
                 
