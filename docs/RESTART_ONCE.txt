@@ -1,0 +1,29 @@
+⚠️  IMPORTANT: ONE-TIME RESTART NEEDED ⚠️
+
+The auto-reload feature has been added to your code, but you need to 
+RESTART THE BOT ONCE to activate it.
+
+After this one restart, you'll NEVER need to restart again when adding pairs!
+
+HOW TO RESTART:
+
+1. Stop the bot: Press Ctrl+C in the terminal where it's running
+
+2. Start it again: ./start.sh
+
+3. Done! Now the auto-reload is active.
+
+WHAT WILL HAPPEN AFTER RESTART:
+
+✅ Every 2 minutes, bot checks if config.json was modified
+✅ When you add a new pair, bot auto-restarts that worker
+✅ New pair starts forwarding immediately
+✅ NO MORE MANUAL RESTARTS NEEDED!
+
+Current status:
+- Bot is running with OLD code (started 14:56:05)
+- Config was modified at 14:58:10
+- Bot didn't detect it because old code doesn't have auto-reload
+- After restart, NEW code will have auto-reload feature
+
+Just restart ONCE and you're set! 🚀

@@ -140,24 +140,86 @@ class WorkerManager:
         self.workers: Dict[str, WorkerProcess] = {}
         self.logger = setup_logger("WorkerManager", log_file="logs/worker_manager.log")
         self.running = False
+        self.config_mtime = self._get_config_mtime()
+        self.last_config_check = time.time()
+        self.worker_configs: Dict[str, Dict] = {}  # Store original worker configs
         
-    def load_workers_from_config(self):
-        """Load worker configurations from config file."""
+    def _get_config_mtime(self) -> float:
+        """Get config file modification time."""
+        try:
+            return Path(self.config_path).stat().st_mtime
+        except Exception:
+            return 0
+    
+    def _configs_equal(self, config1: Dict, config2: Dict) -> bool:
+        """Compare two worker configs (ignoring restart_count and runtime data)."""
+        import json
+        # Compare only the important parts
+        relevant_keys = ["api_id", "api_hash", "session_name", "channel_pairs", "replacement_rules", "filters", "settings"]
+        c1 = {k: config1.get(k) for k in relevant_keys if k in config1}
+        c2 = {k: config2.get(k) for k in relevant_keys if k in config2}
+        return json.dumps(c1, sort_keys=True) == json.dumps(c2, sort_keys=True)
+    
+    def load_workers_from_config(self, restart_on_change: bool = False):
+        """
+        Load worker configurations from config file.
+        
+        Args:
+            restart_on_change: If True, restart workers whose config has changed
+        """
         try:
             with open(self.config_path, 'r') as f:
                 config = json.load(f)
             
             workers_config = config.get("workers", [])
+            new_worker_configs = {}
             
-            # Clear existing workers
-            self.workers.clear()
-            
-            # Create worker objects
+            # Build dict of new configs
             for worker_cfg in workers_config:
                 if worker_cfg.get("enabled", True):
                     worker_id = worker_cfg["worker_id"]
+                    new_worker_configs[worker_id] = worker_cfg
+            
+            # Check for changes if restart_on_change is True
+            if restart_on_change:
+                for worker_id, new_cfg in new_worker_configs.items():
+                    old_cfg = self.worker_configs.get(worker_id)
+                    
+                    if worker_id not in self.workers:
+                        # New worker - create and start it
+                        self.logger.info(f"🆕 New worker detected: {worker_id}")
+                        worker = WorkerProcess(worker_id, new_cfg)
+                        self.workers[worker_id] = worker
+                        worker.start()
+                        self.logger.info(f"✅ Worker {worker_id} started (PID: {worker.process.pid})")
+                    elif old_cfg and not self._configs_equal(old_cfg, new_cfg):
+                        # Config changed - restart worker
+                        self.logger.info(f"🔄 Config changed for worker {worker_id} - restarting...")
+                        old_worker = self.workers[worker_id]
+                        old_worker.stop()
+                        
+                        # Create new worker with updated config
+                        new_worker = WorkerProcess(worker_id, new_cfg)
+                        new_worker.restart_count = old_worker.restart_count  # Preserve restart count
+                        self.workers[worker_id] = new_worker
+                        new_worker.start()
+                        self.logger.info(f"✅ Worker {worker_id} restarted with new config (PID: {new_worker.process.pid})")
+                
+                # Check for removed workers
+                for worker_id in list(self.workers.keys()):
+                    if worker_id not in new_worker_configs:
+                        self.logger.info(f"🗑️  Worker {worker_id} removed from config - stopping...")
+                        self.workers[worker_id].stop()
+                        del self.workers[worker_id]
+            else:
+                # Initial load - just create workers
+                self.workers.clear()
+                for worker_id, worker_cfg in new_worker_configs.items():
                     self.workers[worker_id] = WorkerProcess(worker_id, worker_cfg)
                     self.logger.info(f"✓ Loaded worker config: {worker_id}")
+            
+            # Store current configs
+            self.worker_configs = new_worker_configs
             
             self.logger.info(f"Loaded {len(self.workers)} worker(s) from config")
             
@@ -188,9 +250,27 @@ class WorkerManager:
                 self.logger.error(f"❌ Error stopping worker {worker_id}: {e}")
     
     def monitor_workers(self):
-        """Monitor worker health and restart if needed."""
+        """Monitor worker health and restart if needed. Also check for config changes."""
         while self.running:
             try:
+                # Check for config file changes every 2 minutes
+                current_time = time.time()
+                if current_time - self.last_config_check >= 120:  # 120 seconds = 2 minutes
+                    self.last_config_check = current_time
+                    current_mtime = self._get_config_mtime()
+                    
+                    if current_mtime > self.config_mtime:
+                        self.logger.info("🔄 Config file modified - checking for changes...")
+                        self.config_mtime = current_mtime
+                        
+                        try:
+                            # Reload config and restart workers if needed
+                            self.load_workers_from_config(restart_on_change=True)
+                            self.logger.info("✅ Config reload complete")
+                        except Exception as e:
+                            self.logger.error(f"❌ Failed to reload config: {e}")
+                
+                # Check worker health
                 for worker_id, worker in list(self.workers.items()):
                     if not worker.is_alive():
                         self.logger.warning(

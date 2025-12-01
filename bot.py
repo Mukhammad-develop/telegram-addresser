@@ -107,6 +107,10 @@ class TelegramForwarder:
         # File-based trigger for config reload (created by admin bot)
         self.config_reload_trigger_file = Path("trigger_reload.flag")
         
+        # Track config file modification time for auto-reload
+        self.config_file_mtime = self._get_config_mtime()
+        self.last_config_check_time = time.time()
+        
         self.logger.info("TelegramForwarder initialized")
     
     def _check_and_clear_session_lock(self, max_wait: int = 30) -> bool:
@@ -201,6 +205,15 @@ class TelegramForwarder:
     def _get_pair_key(self, source: int, target: int) -> str:
         """Generate a unique key for a channel pair."""
         return f"{source}:{target}"
+    
+    def _get_config_mtime(self) -> float:
+        """Get config file modification time."""
+        try:
+            if self.config_manager.config_path and os.path.exists(self.config_manager.config_path):
+                return os.path.getmtime(self.config_manager.config_path)
+        except Exception:
+            pass
+        return 0
     
     def _load_message_id_map(self) -> Dict[str, Dict[str, int]]:
         """Load message ID mapping from file."""
@@ -431,9 +444,26 @@ class TelegramForwarder:
             try:
                 await asyncio.sleep(5)  # Poll every 5 seconds
                 
-                # Check for config reload trigger file
+                # Check for config reload trigger file OR automatic config change detection
+                should_reload = False
+                reload_reason = ""
+                
                 if self.config_reload_trigger_file.exists():
-                    self.logger.info("🔄 Config reload triggered by admin bot")
+                    should_reload = True
+                    reload_reason = "admin bot trigger"
+                else:
+                    # Check every 2 minutes if config file has been modified
+                    current_time = time.time()
+                    if current_time - self.last_config_check_time >= 120:  # 120 seconds = 2 minutes
+                        self.last_config_check_time = current_time
+                        current_mtime = self._get_config_mtime()
+                        if current_mtime > self.config_file_mtime:
+                            should_reload = True
+                            reload_reason = "config file modified"
+                            self.config_file_mtime = current_mtime
+                
+                if should_reload:
+                    self.logger.info(f"🔄 Config reload triggered by {reload_reason}")
                     try:
                         # Reload config
                         self.config = self.config_manager.load()
@@ -475,8 +505,10 @@ class TelegramForwarder:
                                     self.logger.error(f"Cannot access new channel {source}: {e}")
                                     self.last_processed_ids[source] = 0
                         
-                        # Remove trigger file
-                        self.config_reload_trigger_file.unlink()
+                        # Remove trigger file if it exists
+                        if self.config_reload_trigger_file.exists():
+                            self.config_reload_trigger_file.unlink()
+                        
                         self.logger.info("✅ Config reload complete, resuming normal operation")
                         
                     except Exception as e:
