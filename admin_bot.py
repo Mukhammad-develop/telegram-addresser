@@ -616,42 +616,27 @@ def show_rules(call):
         )
         return
     
-    # Single-worker mode
-    rules = config_manager.get_replacement_rules()
-    
-    text = "🔄 <b>Replacement Rules</b>\n\n"
-    
-    if rules:
-        for i, rule in enumerate(rules):
-            case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
-            regex = " | 🔣 Regex" if rule.get("is_regex") else ""
-            text += f"<b>Rule {i+1}</b> ({case}{regex})\n"
-            text += f"  Find: <code>{rule['find']}</code>\n"
-            text += f"  Replace: <code>{rule['replace']}</code>\n\n"
-    else:
-        text += "No replacement rules configured.\n\n"
-    
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
-        types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
-    )
-    markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
-    
-    bot.edit_message_text(
-        text,
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode='HTML',
-        reply_markup=markup
-    )
+    # Single-worker mode - show first page directly
+    call.data = "rules_page_single_0"
+    show_rules_page_single(call)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("rules_worker_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("rules_worker_") or call.data.startswith("rules_page_"))
 def show_worker_rules(call):
-    """Show replacement rules for a specific worker."""
+    """Show replacement rules for a specific worker with pagination."""
     try:
-        worker_id = call.data.replace("rules_worker_", "")
+        # Parse callback data
+        if call.data.startswith("rules_worker_"):
+            worker_id = call.data.replace("rules_worker_", "")
+            page = 0
+        elif call.data.startswith("rules_page_"):
+            # Format: rules_page_{worker_id}_{page}
+            parts = call.data.replace("rules_page_", "").split("_")
+            worker_id = "_".join(parts[:-1])  # Worker ID might contain underscores
+            page = int(parts[-1])
+        else:
+            bot.answer_callback_query(call.id, "⚠️ Invalid request", show_alert=True)
+            return
         
         config_manager.load()
         config = config_manager.config
@@ -667,20 +652,46 @@ def show_worker_rules(call):
         temp_storage[call.message.chat.id] = {"selected_worker_id": worker_id}
         
         rules = worker_cfg.get("replacement_rules", [])
+        rules_per_page = 10
+        total_pages = (len(rules) + rules_per_page - 1) // rules_per_page if rules else 1
         
-        text = f"🔄 <b>Replacement Rules - {worker_id}</b>\n\n"
+        # Clamp page number
+        if page < 0:
+            page = 0
+        elif page >= total_pages:
+            page = total_pages - 1
+        
+        text = f"🔄 <b>Replacement Rules - {worker_id}</b>\n"
+        text += f"📄 Page {page + 1}/{total_pages} ({len(rules)} total rules)\n\n"
         
         if rules:
-            for i, rule in enumerate(rules):
+            start_idx = page * rules_per_page
+            end_idx = min(start_idx + rules_per_page, len(rules))
+            
+            for i in range(start_idx, end_idx):
+                rule = rules[i]
+                global_rule_num = i + 1
                 case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
                 regex = " | 🔣 Regex" if rule.get("is_regex") else ""
-                text += f"<b>Rule {i+1}</b> ({case}{regex})\n"
+                text += f"<b>Rule {global_rule_num}</b> ({case}{regex})\n"
                 text += f"  Find: <code>{rule['find']}</code>\n"
                 text += f"  Replace: <code>{rule['replace']}</code>\n\n"
         else:
             text += "No replacement rules configured.\n\n"
         
         markup = types.InlineKeyboardMarkup(row_width=2)
+        
+        # Pagination buttons
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(types.InlineKeyboardButton("◀️ Prev", callback_data=f"rules_page_{worker_id}_{page - 1}"))
+        if page < total_pages - 1:
+            nav_buttons.append(types.InlineKeyboardButton("Next ▶️", callback_data=f"rules_page_{worker_id}_{page + 1}"))
+        
+        if nav_buttons:
+            markup.add(*nav_buttons)
+        
+        # Action buttons
         markup.add(
             types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
             types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
@@ -698,6 +709,76 @@ def show_worker_rules(call):
     except Exception as e:
         import traceback
         print(f"ERROR in show_worker_rules: {e}")
+        traceback.print_exc()
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("rules_page_single_"))
+def show_rules_page_single(call, page=None):
+    """Show replacement rules for single-worker mode with pagination."""
+    try:
+        if page is None:
+            # Parse from callback data
+            page = int(call.data.replace("rules_page_single_", ""))
+        
+        rules = config_manager.get_replacement_rules()
+        rules_per_page = 10
+        total_pages = (len(rules) + rules_per_page - 1) // rules_per_page if rules else 1
+        
+        # Clamp page number
+        if page < 0:
+            page = 0
+        elif page >= total_pages:
+            page = total_pages - 1
+        
+        text = "🔄 <b>Replacement Rules</b>\n"
+        text += f"📄 Page {page + 1}/{total_pages} ({len(rules)} total rules)\n\n"
+        
+        if rules:
+            start_idx = page * rules_per_page
+            end_idx = min(start_idx + rules_per_page, len(rules))
+            
+            for i in range(start_idx, end_idx):
+                rule = rules[i]
+                global_rule_num = i + 1
+                case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
+                regex = " | 🔣 Regex" if rule.get("is_regex") else ""
+                text += f"<b>Rule {global_rule_num}</b> ({case}{regex})\n"
+                text += f"  Find: <code>{rule['find']}</code>\n"
+                text += f"  Replace: <code>{rule['replace']}</code>\n\n"
+        else:
+            text += "No replacement rules configured.\n\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        
+        # Pagination buttons
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(types.InlineKeyboardButton("◀️ Prev", callback_data=f"rules_page_single_{page - 1}"))
+        if page < total_pages - 1:
+            nav_buttons.append(types.InlineKeyboardButton("Next ▶️", callback_data=f"rules_page_single_{page + 1}"))
+        
+        if nav_buttons:
+            markup.add(*nav_buttons)
+        
+        # Action buttons
+        markup.add(
+            types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
+            types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
+        )
+        markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        import traceback
+        print(f"ERROR in show_rules_page_single: {e}")
         traceback.print_exc()
         bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
 
