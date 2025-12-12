@@ -650,49 +650,56 @@ def show_rules(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("rules_worker_"))
 def show_worker_rules(call):
     """Show replacement rules for a specific worker."""
-    worker_id = call.data.replace("rules_worker_", "")
-    
-    config_manager.load()
-    config = config_manager.config
-    workers_config = config.get("workers", [])
-    
-    worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
-    
-    if not worker_cfg:
-        bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
-        return
-    
-    # Store selected worker in temp storage
-    temp_storage[call.message.chat.id] = {"selected_worker_id": worker_id}
-    
-    rules = worker_cfg.get("replacement_rules", [])
-    
-    text = f"🔄 <b>Replacement Rules - {worker_id}</b>\n\n"
-    
-    if rules:
-        for i, rule in enumerate(rules):
-            case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
-            regex = " | 🔣 Regex" if rule.get("is_regex") else ""
-            text += f"<b>Rule {i+1}</b> ({case}{regex})\n"
-            text += f"  Find: <code>{rule['find']}</code>\n"
-            text += f"  Replace: <code>{rule['replace']}</code>\n\n"
-    else:
-        text += "No replacement rules configured.\n\n"
-    
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
-        types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
-    )
-    markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="menu_rules"))
-    
-    bot.edit_message_text(
-        text,
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode='HTML',
-        reply_markup=markup
-    )
+    try:
+        worker_id = call.data.replace("rules_worker_", "")
+        
+        config_manager.load()
+        config = config_manager.config
+        workers_config = config.get("workers", [])
+        
+        worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+        
+        if not worker_cfg:
+            bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+            return
+        
+        # Store selected worker in temp storage
+        temp_storage[call.message.chat.id] = {"selected_worker_id": worker_id}
+        
+        rules = worker_cfg.get("replacement_rules", [])
+        
+        text = f"🔄 <b>Replacement Rules - {worker_id}</b>\n\n"
+        
+        if rules:
+            for i, rule in enumerate(rules):
+                case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
+                regex = " | 🔣 Regex" if rule.get("is_regex") else ""
+                text += f"<b>Rule {i+1}</b> ({case}{regex})\n"
+                text += f"  Find: <code>{rule['find']}</code>\n"
+                text += f"  Replace: <code>{rule['replace']}</code>\n\n"
+        else:
+            text += "No replacement rules configured.\n\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
+            types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
+        )
+        markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="menu_rules"))
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+        bot.answer_callback_query(call.id)  # Acknowledge button click
+    except Exception as e:
+        import traceback
+        print(f"ERROR in show_worker_rules: {e}")
+        traceback.print_exc()
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "add_rule")
@@ -905,8 +912,10 @@ def finish_add_rule(call):
         print(f"  - Is regex: {is_regex}")
         
         print(f"[STEP 4] Saving rule to config...")
-        config_manager.add_replacement_rule(find_text, replace_text, case_sensitive, is_regex)
-        print(f"[STEP 4] Rule saved successfully!")
+        # Get selected worker_id if in multi-worker mode
+        worker_id = data.get("selected_worker_id")
+        config_manager.add_replacement_rule(find_text, replace_text, case_sensitive, is_regex, worker_id=worker_id)
+        print(f"[STEP 4] Rule saved successfully! Worker: {worker_id if worker_id else 'single-worker'}")
         
         # Verify it was saved
         config_manager.load()
@@ -940,31 +949,104 @@ def finish_add_rule(call):
 @bot.callback_query_handler(func=lambda call: call.data == "remove_rule")
 def remove_rule_start(call):
     """Start removing rule."""
-    config_manager.load()
-    rules = config_manager.get_replacement_rules()
-    
-    if not rules:
-        bot.answer_callback_query(call.id, "No rules to remove!")
-        return
-    
-    text = "🗑️ <b>Remove Replacement Rule</b>\n\n"
-    text += "Send the rule number to remove:\n\n"
-    
-    for i, rule in enumerate(rules):
-        text += f"{i+1}. {rule['find']} → {rule['replace']}\n"
-    
-    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML')
-    bot.register_next_step_handler(call.message, process_remove_rule)
+    try:
+        config_manager.load()
+        config = config_manager.config
+        
+        # Check if multi-worker mode
+        is_multiworker = "workers" in config and isinstance(config.get("workers"), list)
+        
+        if is_multiworker:
+            # Get selected worker from temp storage
+            data = temp_storage.get(call.message.chat.id, {})
+            worker_id = data.get("selected_worker_id")
+            
+            if not worker_id:
+                bot.answer_callback_query(call.id, "⚠️ No worker selected", show_alert=True)
+                return
+            
+            # Get worker's rules
+            workers_config = config.get("workers", [])
+            worker_cfg = next((w for w in workers_config if w["worker_id"] == worker_id), None)
+            
+            if not worker_cfg:
+                bot.answer_callback_query(call.id, "⚠️ Worker not found", show_alert=True)
+                return
+            
+            rules = worker_cfg.get("replacement_rules", [])
+            worker_msg = f" for {worker_id}"
+        else:
+            rules = config_manager.get_replacement_rules()
+            worker_id = None
+            worker_msg = ""
+        
+        if not rules:
+            bot.answer_callback_query(call.id, "No rules to remove!")
+            return
+        
+        text = f"🗑️ <b>Remove Replacement Rule{worker_msg}</b>\n\n"
+        text += "Send the rule number to remove:\n\n"
+        
+        for i, rule in enumerate(rules):
+            text += f"{i+1}. {rule['find']} → {rule['replace']}\n"
+        
+        # Store worker_id in temp storage for process_remove_rule
+        if is_multiworker:
+            if call.message.chat.id not in temp_storage:
+                temp_storage[call.message.chat.id] = {}
+            temp_storage[call.message.chat.id]["selected_worker_id"] = worker_id
+        
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML')
+        bot.register_next_step_handler(call.message, process_remove_rule)
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        import traceback
+        print(f"ERROR in remove_rule_start: {e}")
+        traceback.print_exc()
+        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
 
 
 def process_remove_rule(message):
     """Process rule removal."""
     try:
         index = int(message.text.strip()) - 1
-        config_manager.remove_replacement_rule(index)
-        bot.reply_to(message, "✅ Replacement rule removed!", reply_markup=main_menu_keyboard())
+        
+        config_manager.load()
+        config = config_manager.config
+        
+        # Check if multi-worker mode
+        is_multiworker = "workers" in config and isinstance(config.get("workers"), list)
+        
+        if is_multiworker:
+            # Get selected worker from temp storage
+            data = temp_storage.get(message.chat.id, {})
+            worker_id = data.get("selected_worker_id")
+            
+            if not worker_id:
+                bot.reply_to(message, "❌ Session expired. Please try again.")
+                return
+            
+            config_manager.remove_replacement_rule(index, worker_id=worker_id)
+            worker_msg = f" from {worker_id}"
+        else:
+            config_manager.remove_replacement_rule(index)
+            worker_msg = ""
+        
+        bot.reply_to(message, f"✅ Replacement rule removed{worker_msg}!", reply_markup=main_menu_keyboard())
+        
+        # Create trigger file to reload config
+        trigger_file = Path("trigger_reload.flag")
+        try:
+            trigger_file.touch()
+        except:
+            pass
     except (ValueError, IndexError):
         bot.reply_to(message, "❌ Invalid rule number.")
+    except Exception as e:
+        import traceback
+        print(f"ERROR in process_remove_rule: {e}")
+        traceback.print_exc()
+        bot.reply_to(message, f"❌ Error: {str(e)}")
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)}")
 
