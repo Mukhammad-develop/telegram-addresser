@@ -663,23 +663,23 @@ def show_worker_rules(call):
         
         text = f"🔄 <b>Replacement Rules - {worker_id}</b>\n"
         text += f"📄 Page {page + 1}/{total_pages} ({len(rules)} total rules)\n\n"
-    
-    if rules:
+        
+        if rules:
             start_idx = page * rules_per_page
             end_idx = min(start_idx + rules_per_page, len(rules))
             
             for i in range(start_idx, end_idx):
                 rule = rules[i]
                 global_rule_num = i + 1
-            case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
-            regex = " | 🔣 Regex" if rule.get("is_regex") else ""
+                case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
+                regex = " | 🔣 Regex" if rule.get("is_regex") else ""
                 text += f"<b>Rule {global_rule_num}</b> ({case}{regex})\n"
-            text += f"  Find: <code>{rule['find']}</code>\n"
-            text += f"  Replace: <code>{rule['replace']}</code>\n\n"
-    else:
-        text += "No replacement rules configured.\n\n"
-    
-    markup = types.InlineKeyboardMarkup(row_width=2)
+                text += f"  Find: <code>{rule['find']}</code>\n"
+                text += f"  Replace: <code>{rule['replace']}</code>\n\n"
+        else:
+            text += "No replacement rules configured.\n\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=2)
         
         # Pagination buttons
         nav_buttons = []
@@ -692,19 +692,19 @@ def show_worker_rules(call):
             markup.add(*nav_buttons)
         
         # Action buttons
-    markup.add(
-        types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
-        types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
-    )
+        markup.add(
+            types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
+            types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
+        )
         markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="menu_rules"))
-    
-    bot.edit_message_text(
-        text,
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode='HTML',
-        reply_markup=markup
-    )
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
         bot.answer_callback_query(call.id)  # Acknowledge button click
     except Exception as e:
         import traceback
@@ -733,23 +733,23 @@ def show_rules_page_single(call, page=None):
         
         text = "🔄 <b>Replacement Rules</b>\n"
         text += f"📄 Page {page + 1}/{total_pages} ({len(rules)} total rules)\n\n"
-    
-    if rules:
+        
+        if rules:
             start_idx = page * rules_per_page
             end_idx = min(start_idx + rules_per_page, len(rules))
             
             for i in range(start_idx, end_idx):
                 rule = rules[i]
                 global_rule_num = i + 1
-            case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
-            regex = " | 🔣 Regex" if rule.get("is_regex") else ""
+                case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
+                regex = " | 🔣 Regex" if rule.get("is_regex") else ""
                 text += f"<b>Rule {global_rule_num}</b> ({case}{regex})\n"
-            text += f"  Find: <code>{rule['find']}</code>\n"
-            text += f"  Replace: <code>{rule['replace']}</code>\n\n"
-    else:
-        text += "No replacement rules configured.\n\n"
-    
-    markup = types.InlineKeyboardMarkup(row_width=2)
+                text += f"  Find: <code>{rule['find']}</code>\n"
+                text += f"  Replace: <code>{rule['replace']}</code>\n\n"
+        else:
+            text += "No replacement rules configured.\n\n"
+        
+        markup = types.InlineKeyboardMarkup(row_width=2)
         
         # Pagination buttons
         nav_buttons = []
@@ -762,19 +762,19 @@ def show_rules_page_single(call, page=None):
             markup.add(*nav_buttons)
         
         # Action buttons
-    markup.add(
-        types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
-        types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
-    )
+        markup.add(
+            types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
+            types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
+        )
         markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
-    
-    bot.edit_message_text(
-        text,
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode='HTML',
-        reply_markup=markup
-    )
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
         bot.answer_callback_query(call.id)
     except Exception as e:
         import traceback
@@ -1031,7 +1031,7 @@ def finish_add_rule(call):
 def remove_rule_start(call):
     """Start removing rule."""
     try:
-    config_manager.load()
+        config_manager.load()
         config = config_manager.config
         
         # Check if multi-worker mode
@@ -1057,28 +1057,28 @@ def remove_rule_start(call):
             rules = worker_cfg.get("replacement_rules", [])
             worker_msg = f" for {worker_id}"
         else:
-    rules = config_manager.get_replacement_rules()
+            rules = config_manager.get_replacement_rules()
             worker_id = None
             worker_msg = ""
-    
-    if not rules:
-        bot.answer_callback_query(call.id, "No rules to remove!")
-        return
-    
+        
+        if not rules:
+            bot.answer_callback_query(call.id, "No rules to remove!")
+            return
+        
         text = f"🗑️ <b>Remove Replacement Rule{worker_msg}</b>\n\n"
-    text += "Send the rule number to remove:\n\n"
-    
-    for i, rule in enumerate(rules):
-        text += f"{i+1}. {rule['find']} → {rule['replace']}\n"
-    
+        text += "Send the rule number to remove:\n\n"
+        
+        for i, rule in enumerate(rules):
+            text += f"{i+1}. {rule['find']} → {rule['replace']}\n"
+        
         # Store worker_id in temp storage for process_remove_rule
         if is_multiworker:
             if call.message.chat.id not in temp_storage:
                 temp_storage[call.message.chat.id] = {}
             temp_storage[call.message.chat.id]["selected_worker_id"] = worker_id
         
-    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML')
-    bot.register_next_step_handler(call.message, process_remove_rule)
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML')
+        bot.register_next_step_handler(call.message, process_remove_rule)
         bot.answer_callback_query(call.id)
     except Exception as e:
         import traceback
@@ -1110,7 +1110,7 @@ def process_remove_rule(message):
             config_manager.remove_replacement_rule(index, worker_id=worker_id)
             worker_msg = f" from {worker_id}"
         else:
-        config_manager.remove_replacement_rule(index)
+            config_manager.remove_replacement_rule(index)
             worker_msg = ""
         
         bot.reply_to(message, f"✅ Replacement rule removed{worker_msg}!", reply_markup=main_menu_keyboard())
