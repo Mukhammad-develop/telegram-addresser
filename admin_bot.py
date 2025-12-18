@@ -663,23 +663,23 @@ def show_worker_rules(call):
         
         text = f"🔄 <b>Replacement Rules - {worker_id}</b>\n"
         text += f"📄 Page {page + 1}/{total_pages} ({len(rules)} total rules)\n\n"
-        
-        if rules:
+    
+    if rules:
             start_idx = page * rules_per_page
             end_idx = min(start_idx + rules_per_page, len(rules))
             
             for i in range(start_idx, end_idx):
                 rule = rules[i]
                 global_rule_num = i + 1
-                case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
-                regex = " | 🔣 Regex" if rule.get("is_regex") else ""
+            case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
+            regex = " | 🔣 Regex" if rule.get("is_regex") else ""
                 text += f"<b>Rule {global_rule_num}</b> ({case}{regex})\n"
-                text += f"  Find: <code>{rule['find']}</code>\n"
-                text += f"  Replace: <code>{rule['replace']}</code>\n\n"
-        else:
-            text += "No replacement rules configured.\n\n"
-        
-        markup = types.InlineKeyboardMarkup(row_width=2)
+            text += f"  Find: <code>{rule['find']}</code>\n"
+            text += f"  Replace: <code>{rule['replace']}</code>\n\n"
+    else:
+        text += "No replacement rules configured.\n\n"
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
         
         # Pagination buttons
         nav_buttons = []
@@ -692,19 +692,19 @@ def show_worker_rules(call):
             markup.add(*nav_buttons)
         
         # Action buttons
-        markup.add(
-            types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
-            types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
-        )
+    markup.add(
+        types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
+        types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
+    )
         markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="menu_rules"))
-        
-        bot.edit_message_text(
-            text,
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode='HTML',
-            reply_markup=markup
-        )
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
         bot.answer_callback_query(call.id)  # Acknowledge button click
     except Exception as e:
         import traceback
@@ -733,23 +733,23 @@ def show_rules_page_single(call, page=None):
         
         text = "🔄 <b>Replacement Rules</b>\n"
         text += f"📄 Page {page + 1}/{total_pages} ({len(rules)} total rules)\n\n"
-        
-        if rules:
+    
+    if rules:
             start_idx = page * rules_per_page
             end_idx = min(start_idx + rules_per_page, len(rules))
             
             for i in range(start_idx, end_idx):
                 rule = rules[i]
                 global_rule_num = i + 1
-                case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
-                regex = " | 🔣 Regex" if rule.get("is_regex") else ""
+            case = "Case-sensitive" if rule.get("case_sensitive") else "Case-insensitive"
+            regex = " | 🔣 Regex" if rule.get("is_regex") else ""
                 text += f"<b>Rule {global_rule_num}</b> ({case}{regex})\n"
-                text += f"  Find: <code>{rule['find']}</code>\n"
-                text += f"  Replace: <code>{rule['replace']}</code>\n\n"
-        else:
-            text += "No replacement rules configured.\n\n"
-        
-        markup = types.InlineKeyboardMarkup(row_width=2)
+            text += f"  Find: <code>{rule['find']}</code>\n"
+            text += f"  Replace: <code>{rule['replace']}</code>\n\n"
+    else:
+        text += "No replacement rules configured.\n\n"
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
         
         # Pagination buttons
         nav_buttons = []
@@ -762,19 +762,19 @@ def show_rules_page_single(call, page=None):
             markup.add(*nav_buttons)
         
         # Action buttons
-        markup.add(
-            types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
-            types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
-        )
+    markup.add(
+        types.InlineKeyboardButton("➕ Add Rule", callback_data="add_rule"),
+        types.InlineKeyboardButton("🗑️ Remove Rule", callback_data="remove_rule")
+    )
         markup.add(types.InlineKeyboardButton("◀️ Back", callback_data="main_menu"))
-        
-        bot.edit_message_text(
-            text,
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode='HTML',
-            reply_markup=markup
-        )
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
         bot.answer_callback_query(call.id)
     except Exception as e:
         import traceback
@@ -1031,7 +1031,7 @@ def finish_add_rule(call):
 def remove_rule_start(call):
     """Start removing rule."""
     try:
-        config_manager.load()
+    config_manager.load()
         config = config_manager.config
         
         # Check if multi-worker mode
@@ -1057,28 +1057,28 @@ def remove_rule_start(call):
             rules = worker_cfg.get("replacement_rules", [])
             worker_msg = f" for {worker_id}"
         else:
-            rules = config_manager.get_replacement_rules()
+    rules = config_manager.get_replacement_rules()
             worker_id = None
             worker_msg = ""
-        
-        if not rules:
-            bot.answer_callback_query(call.id, "No rules to remove!")
-            return
-        
+    
+    if not rules:
+        bot.answer_callback_query(call.id, "No rules to remove!")
+        return
+    
         text = f"🗑️ <b>Remove Replacement Rule{worker_msg}</b>\n\n"
-        text += "Send the rule number to remove:\n\n"
-        
-        for i, rule in enumerate(rules):
-            text += f"{i+1}. {rule['find']} → {rule['replace']}\n"
-        
+    text += "Send the rule number to remove:\n\n"
+    
+    for i, rule in enumerate(rules):
+        text += f"{i+1}. {rule['find']} → {rule['replace']}\n"
+    
         # Store worker_id in temp storage for process_remove_rule
         if is_multiworker:
             if call.message.chat.id not in temp_storage:
                 temp_storage[call.message.chat.id] = {}
             temp_storage[call.message.chat.id]["selected_worker_id"] = worker_id
         
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML')
-        bot.register_next_step_handler(call.message, process_remove_rule)
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML')
+    bot.register_next_step_handler(call.message, process_remove_rule)
         bot.answer_callback_query(call.id)
     except Exception as e:
         import traceback
@@ -1110,7 +1110,7 @@ def process_remove_rule(message):
             config_manager.remove_replacement_rule(index, worker_id=worker_id)
             worker_msg = f" from {worker_id}"
         else:
-            config_manager.remove_replacement_rule(index)
+        config_manager.remove_replacement_rule(index)
             worker_msg = ""
         
         bot.reply_to(message, f"✅ Replacement rule removed{worker_msg}!", reply_markup=main_menu_keyboard())
@@ -1453,56 +1453,38 @@ def show_workers(call):
         )
         return
     
-    # Multi-worker mode - show worker status
-    try:
-        manager = get_worker_manager()
-        status = manager.get_status()
+    # Multi-worker mode - show worker list
+    text = "👷 <b>Workers Management</b>\n\n"
+    text += f"<b>Total Workers:</b> {len(workers_config)}\n\n"
+    
+    for worker_cfg in workers_config:
+        worker_id = worker_cfg["worker_id"]
+        enabled = worker_cfg.get("enabled", True)
         
-        text = "👷 <b>Workers Management</b>\n\n"
-        text += f"<b>Total Workers:</b> {len(workers_config)}\n"
-        text += f"<b>Running:</b> {sum(1 for s in status.values() if s['alive'])}\n\n"
-        
-        for worker_cfg in workers_config:
-            worker_id = worker_cfg["worker_id"]
-            enabled = worker_cfg.get("enabled", True)
-            
-            if worker_id in status:
-                s = status[worker_id]
-                uptime_mins = int(s['uptime'] / 60)
-                
-                text += f"<b>🔹 {worker_id}</b>\n"
-                text += f"   Status: {'✅ Running' if s['alive'] else '❌ Stopped'}\n"
-                if s['alive']:
-                    text += f"   PID: {s['pid']}\n"
-                    text += f"   Uptime: {uptime_mins} min\n"
-                    text += f"   Restarts: {s['restart_count']}\n"
-                text += f"   Channels: {len(worker_cfg.get('channel_pairs', []))}\n"
-            else:
-                text += f"<b>🔹 {worker_id}</b>\n"
-                text += f"   Status: {'⏸️ Disabled' if not enabled else '❌ Not Started'}\n"
-                text += f"   Channels: {len(worker_cfg.get('channel_pairs', []))}\n"
-            text += "\n"
-        
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            types.InlineKeyboardButton("🚀 Start All", callback_data="workers_start_all"),
-            types.InlineKeyboardButton("🛑 Stop All", callback_data="workers_stop_all"),
-            types.InlineKeyboardButton("🔄 Restart All", callback_data="workers_restart_all"),
-            types.InlineKeyboardButton("➕ Add Worker", callback_data="workers_add"),
-            types.InlineKeyboardButton("🔍 Worker Details", callback_data="workers_details"),
-            types.InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
-        )
-        
-        bot.edit_message_text(
-            text,
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode='HTML',
-            reply_markup=markup
-        )
-        
-    except Exception as e:
-        bot.answer_callback_query(call.id, f"❌ Error: {str(e)}", show_alert=True)
+        text += f"<b>🔹 {worker_id}</b>\n"
+        if not enabled:
+            text += f"   ⏸️ Disabled\n"
+        text += f"   Channels: {len(worker_cfg.get('channel_pairs', []))}\n"
+        text += f"   Rules: {len(worker_cfg.get('replacement_rules', []))}\n"
+        text += "\n"
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("🚀 Start All", callback_data="workers_start_all"),
+        types.InlineKeyboardButton("🛑 Stop All", callback_data="workers_stop_all"),
+        types.InlineKeyboardButton("🔄 Restart All", callback_data="workers_restart_all"),
+        types.InlineKeyboardButton("➕ Add Worker", callback_data="workers_add"),
+        types.InlineKeyboardButton("🔍 Worker Details", callback_data="workers_details"),
+        types.InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+    )
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='HTML',
+        reply_markup=markup
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "workers_start_all")
@@ -1601,27 +1583,7 @@ def view_worker_detail(call):
         return
     
     try:
-        manager = get_worker_manager()
-        status = manager.get_status()
-        
         text = f"👷 <b>Worker: {worker_id}</b>\n\n"
-        
-        if worker_id in status:
-            s = status[worker_id]
-            uptime_mins = int(s['uptime'] / 60)
-            uptime_hours = uptime_mins // 60
-            uptime_mins_remainder = uptime_mins % 60
-            
-            text += f"<b>Status:</b> {'✅ Running' if s['alive'] else '❌ Stopped'}\n"
-            if s['alive']:
-                text += f"<b>PID:</b> {s['pid']}\n"
-                if uptime_hours > 0:
-                    text += f"<b>Uptime:</b> {uptime_hours}h {uptime_mins_remainder}m\n"
-                else:
-                    text += f"<b>Uptime:</b> {uptime_mins}m\n"
-                text += f"<b>Restarts:</b> {s['restart_count']}\n"
-        else:
-            text += f"<b>Status:</b> ❌ Not Started\n"
         
         # Check authentication status
         session_file = Path(f"{worker_cfg.get('session_name', 'unknown')}.session")
