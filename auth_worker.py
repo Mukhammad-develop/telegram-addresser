@@ -4,14 +4,15 @@ import json
 import sys
 import asyncio
 from telethon import TelegramClient
+from src.config_manager import ConfigManager
 
 
 async def authenticate_worker(worker_id: str, config_path: str = "config.json"):
     """Authenticate a specific worker."""
     # Load config
     try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
+        config_manager = ConfigManager(config_path)
+        config = config_manager.load()
     except FileNotFoundError:
         print(f"❌ Config file not found: {config_path}")
         return False
@@ -80,7 +81,7 @@ async def main():
         print("\nUsage: python auth_worker.py <worker_id>")
         print("\nExample: python auth_worker.py worker_lupin")
         print("\nThis script will:")
-        print("  1. Read the worker's API credentials from config.json")
+        print("  1. Read the worker's API credentials from config.db")
         print("  2. Prompt you for phone number and verification code")
         print("  3. Create the session file for this worker")
         print("  4. After authentication, you can start the bot normally")
@@ -88,12 +89,11 @@ async def main():
         
         # List available workers
         try:
-            with open("config.json", 'r') as f:
-                config = json.load(f)
+            config = ConfigManager("config.json").load()
             
             workers = config.get("workers", [])
             if workers:
-                print("\n💡 Available workers in config.json:")
+                print("\n💡 Available workers in config.db:")
                 for w in workers:
                     worker_id = w.get("worker_id", "unknown")
                     session = w.get("session_name", "unknown")
@@ -111,4 +111,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

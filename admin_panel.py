@@ -327,7 +327,7 @@ HTML_TEMPLATE = """
                     <strong>Current Configuration:</strong><br>
                     API ID: {{ api_creds.api_id }}<br>
                     Session: {{ api_creds.session_name }}<br>
-                    <em>To change credentials, edit config.json directly</em>
+                    <em>To change credentials, edit config.db via the admin panel/bot</em>
                 </div>
             </div>
             
@@ -468,4 +468,3 @@ def run_admin_panel(host='127.0.0.1', port=5000):
 
 if __name__ == '__main__':
     run_admin_panel()
-

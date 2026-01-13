@@ -1,6 +1,5 @@
 """Worker Manager for multi-process forwarding with separate API credentials."""
 import asyncio
-import json
 import multiprocessing
 import signal
 import sys
@@ -11,6 +10,7 @@ import logging
 
 from bot import TelegramForwarder
 from src.logger_setup import setup_logger
+from src.config_manager import ConfigManager
 
 
 class WorkerProcess:
@@ -140,14 +140,15 @@ class WorkerManager:
         self.workers: Dict[str, WorkerProcess] = {}
         self.logger = setup_logger("WorkerManager", log_file="logs/worker_manager.log")
         self.running = False
+        self.config_manager = ConfigManager(self.config_path)
         self.config_mtime = self._get_config_mtime()
         self.last_config_check = time.time()
         self.worker_configs: Dict[str, Dict] = {}  # Store original worker configs
         
     def _get_config_mtime(self) -> float:
-        """Get config file modification time."""
+        """Get config storage modification time."""
         try:
-            return Path(self.config_path).stat().st_mtime
+            return self.config_manager.get_storage_mtime()
         except Exception:
             return 0
     
@@ -168,8 +169,7 @@ class WorkerManager:
             restart_on_change: If True, restart workers whose config has changed
         """
         try:
-            with open(self.config_path, 'r') as f:
-                config = json.load(f)
+            config = self.config_manager.load()
             
             workers_config = config.get("workers", [])
             new_worker_configs = {}
@@ -328,7 +328,7 @@ class WorkerManager:
             self.load_workers_from_config()
             
             if not self.workers:
-                self.logger.warning("⚠️ No workers configured. Please add workers to config.json")
+                self.logger.warning("⚠️ No workers configured. Please add workers to config.db via admin bot/panel.")
                 return
             
             # Start all workers
@@ -361,4 +361,3 @@ if __name__ == "__main__":
     # Run manager
     manager = WorkerManager()
     manager.run()
-

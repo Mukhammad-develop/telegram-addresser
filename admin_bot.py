@@ -1436,8 +1436,8 @@ def show_workers(call):
         text += "⚠️ Multi-worker mode is not configured.\n\n"
         text += "Your bot is running in <b>single-worker mode</b>.\n\n"
         text += "To enable multi-worker mode:\n"
-        text += "1. Edit config.json\n"
-        text += "2. Add 'workers' array (see config.example.json)\n"
+        text += "1. Add a worker via this admin bot\n"
+        text += "2. Authenticate the worker account\n"
         text += "3. Restart the bot\n\n"
         text += "Single-worker mode is simpler and works great for most users!"
         
@@ -1719,7 +1719,7 @@ def remove_worker(call):
     text += f"Are you sure you want to remove worker <b>{worker_id}</b>?\n\n"
     text += "This will:\n"
     text += "• Stop the worker if running\n"
-    text += "• Remove it from config.json\n"
+    text += "• Remove it from config.db\n"
     text += "• This action cannot be undone!\n"
     
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -1974,7 +1974,7 @@ def process_session_name(message):
     text += f"<b>Session:</b> {session_name}\n\n"
     text += "⚠️ <b>Important:</b>\n"
     text += "• You need to authenticate this worker\n"
-    text += "• Run: python bot.py --config config.json\n"
+    text += f"• Run: python auth_worker.py {worker_id}\n"
     text += "• Enter phone number for this account\n"
     text += "• No channels assigned yet\n"
     text += "• Use 'Assign Channels' to add channel pairs\n"
@@ -2837,4 +2837,3 @@ def run_admin_bot():
 
 if __name__ == '__main__':
     run_admin_bot()
-

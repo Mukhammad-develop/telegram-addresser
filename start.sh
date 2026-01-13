@@ -41,10 +41,23 @@ mkdir -p logs
 
 echo ""
 
-# Auto-detect mode from config.json
-if python3 -c "import json; config = json.load(open('config.json')); exit(0 if 'workers' in config else 1)" 2>/dev/null; then
-    # Multi-worker mode detected
-    WORKER_COUNT=$(python3 -c "import json; print(len([w for w in json.load(open('config.json')).get('workers', []) if w.get('enabled', True)]))" 2>/dev/null || echo "0")
+# Auto-detect mode from SQLite-backed config
+MODE_INFO=$(python3 - <<'PY'
+from src.config_manager import ConfigManager
+
+config = ConfigManager().load()
+if "workers" in config:
+    enabled = [w for w in config.get("workers", []) if w.get("enabled", True)]
+    print(f"multi {len(enabled)}")
+else:
+    print("single 0")
+PY
+)
+
+MODE=$(echo "$MODE_INFO" | awk '{print $1}')
+WORKER_COUNT=$(echo "$MODE_INFO" | awk '{print $2}')
+
+if [ "$MODE" = "multi" ]; then
     
     if [ "$WORKER_COUNT" -eq "0" ]; then
         echo "⚠️  Warning: No enabled workers found in config!"

@@ -57,7 +57,7 @@ class TelegramForwarder:
         
         # Validate credentials
         if not self.api_id or not self.api_hash:
-            raise ValueError("API credentials not configured. Please update config.json")
+            raise ValueError("API credentials not configured. Please update config.db (via admin bot/panel).")
         
         # Initialize Telegram client
         self.client = TelegramClient(self.session_name, self.api_id, self.api_hash)
@@ -207,13 +207,11 @@ class TelegramForwarder:
         return f"{source}:{target}"
     
     def _get_config_mtime(self) -> float:
-        """Get config file modification time."""
+        """Get configuration storage modification time."""
         try:
-            if self.config_manager.config_path and os.path.exists(self.config_manager.config_path):
-                return os.path.getmtime(self.config_manager.config_path)
+            return self.config_manager.get_storage_mtime()
         except Exception:
-            pass
-        return 0
+            return 0
     
     def _load_message_id_map(self) -> Dict[str, Dict[str, int]]:
         """Load message ID mapping from file."""
@@ -1313,9 +1311,9 @@ async def main():
     
     # Check if config is multi-worker format
     try:
-        with open(args.config, 'r') as f:
-            config_data = json.load(f)
-        
+        config_manager = ConfigManager(args.config)
+        config_data = config_manager.load()
+
         if "workers" in config_data and isinstance(config_data.get("workers"), list):
             # Multi-worker config detected
             print("\n" + "="*60)
@@ -1325,8 +1323,8 @@ async def main():
             print("\n📝 To use multi-worker mode:\n")
             print("   ./start.sh")
             print("\n📝 To authenticate a specific worker:\n")
-            print("   1. Find the worker's session name in config.json")
-            print(f"   2. Create a temporary single-worker config")
+            print("   1. Find the worker's session name in config.db")
+            print("   2. Create a temporary single-worker config")
             print("   3. Or use the admin bot to manage workers")
             print("\n💡 Your workers:")
             for worker in config_data.get("workers", []):
@@ -1375,4 +1373,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

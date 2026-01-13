@@ -4,13 +4,12 @@ Test script to run a single worker WITHOUT multiprocessing.
 This will help diagnose if the issue is with multiprocessing or Telethon itself.
 """
 import asyncio
-import json
 from bot import TelegramForwarder
+from src.config_manager import ConfigManager
 
 async def main():
     # Load config
-    with open('config.json') as f:
-        config = json.load(f)
+    config = ConfigManager().load()
     
     # Get first worker
     worker = config['workers'][0]
@@ -46,4 +45,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
